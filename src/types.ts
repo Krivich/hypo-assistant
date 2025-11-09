@@ -2,22 +2,38 @@
 // ТЕЗИС: Избегаем "типовых помоек" — каждый тип должен иметь чёткую зону ответственности.
 
 export interface Patch {
-  file: string;
-  from: string;
-  to: string;
+    file: string;
+    from: string;
+    to: string;
 }
 
 export interface SourceEntry {
-  type: 'html' | 'js' | 'css';
-  content: string;
-  hash: string;
-  signatureStart: string;
-  signatureEnd: string;
+    type: 'html' | 'js' | 'css';
+    content: string;
+    hash: string;
+    signatureStart: string;
+    signatureEnd: string;
 }
 
 export type Sources = Record<string, SourceEntry>;
 
 export interface Message {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+}
+
+// ТЕЗИС: ToolCall — безопасный, декларативный способ описания изменений DOM.
+// ТЕЗИС: Все инструменты избегают выполнения JavaScript и не нарушают идемпотентность.
+export type ToolCall =
+    | { tool: 'setTextContent'; selector: string; text: string }
+    | { tool: 'setAttribute'; selector: string; name: string; value: string }
+    | { tool: 'insertAdjacentHTML'; selector: string; position: 'beforebegin' | 'afterbegin' | 'beforeend' | 'afterend'; html: string }
+    | { tool: 'addStyleRule'; selector: string; style: string }
+    | { tool: 'removeElement'; selector: string }
+    | { tool: 'wrapElement'; selector: string; wrapperTag: string; wrapperClass?: string }
+    | { tool: 'applyTextPatch'; file: string; from: string; to: string }; // fallback
+
+export interface PatchResult {
+    message: string;
+    patches: ToolCall[];
 }

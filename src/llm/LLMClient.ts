@@ -52,9 +52,9 @@ export class LLMClient {
   async call(messages: Message[], context: string, signal?: AbortSignal): Promise<unknown> {
     const apiEndpoint = this.config.get('https://openrouter.ai/api/v1/chat/completions', 'llm.apiEndpoint');
     const apiKey = this.config.get('', 'llm.apiKey');
-    const model = this.config.get('qwen/qwen3-coder:free', 'llm.model');
+    const model = this.config.get('tngtech/deepseek-r1t2-chimera:free', 'llm.model');
     const timeoutMs = this.config.get(60000, 'llm.timeouts.generationMs');
-    const maxRetries = this.config.get(3, 'llm.maxRetries');
+    const maxRetries = this.config.get(20, 'llm.maxRetries');
     const retryDelayBaseMs = this.config.get(1000, 'llm.retryDelayBaseMs');
 
     let urlToUse = apiEndpoint;
@@ -69,7 +69,9 @@ export class LLMClient {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      const combinedSignal = AbortSignal.any([signal, controller.signal]);
+      const combinedSignal = signal
+          ? AbortSignal.any([signal, controller.signal])
+          : controller.signal;
 
       try {
         const headers: Record<string, string> = {

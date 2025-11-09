@@ -1,72 +1,5 @@
 "use strict";
 var HypoAssistant = (() => {
-  var __defProp = Object.defineProperty;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __esm = (fn, res) => function __init() {
-    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-  };
-  var __export = (target, all) => {
-    for (var name in all)
-      __defProp(target, name, { get: all[name], enumerable: true });
-  };
-
-  // src/core/PatchManager.ts
-  var PatchManager_exports = {};
-  __export(PatchManager_exports, {
-    PatchManager: () => PatchManager
-  });
-  function deepClone(obj) {
-    return JSON.parse(JSON.stringify(obj));
-  }
-  var PatchManager;
-  var init_PatchManager = __esm({
-    "src/core/PatchManager.ts"() {
-      "use strict";
-      PatchManager = class {
-        static applyPatches(sources, patches) {
-          const patched = deepClone(sources);
-          for (const patch of patches) {
-            const file = patched[patch.file];
-            if (!file) continue;
-            const fullFrom = file.signatureStart + patch.from + file.signatureEnd;
-            const fullTo = file.signatureStart + patch.to + file.signatureEnd;
-            if (file.content.includes(fullFrom)) {
-              file.content = file.content.replace(fullFrom, fullTo);
-            }
-          }
-          return patched;
-        }
-        static injectPatchedSources(patched) {
-          const htmlSource = patched["HTML_DOC"];
-          if (htmlSource) {
-            document.open();
-            document.write(htmlSource.content);
-            document.close();
-            return;
-          }
-          let scriptIndex = 0;
-          document.querySelectorAll('script:not([src]):not([id="hypo-assistant-core"])').forEach((el) => {
-            const id = `inline-script-${scriptIndex++}`;
-            const src = patched[id];
-            if (src) el.textContent = src.content;
-          });
-          let styleIndex = 0;
-          document.querySelectorAll("style").forEach((el) => {
-            const id = `inline-style-${styleIndex++}`;
-            const src = patched[id];
-            if (src) el.textContent = src.content;
-          });
-          let tmplIndex = 0;
-          document.querySelectorAll("template").forEach((el) => {
-            const id = `template-${tmplIndex++}`;
-            const src = patched[id];
-            if (src) el.innerHTML = src.content;
-          });
-        }
-      };
-    }
-  });
-
   // src/config/AppConfig.ts
   var AppConfig = class {
     externalConfig = null;
@@ -197,9 +130,9 @@ var HypoAssistant = (() => {
     async call(messages, context, signal) {
       const apiEndpoint = this.config.get("https://openrouter.ai/api/v1/chat/completions", "llm.apiEndpoint");
       const apiKey = this.config.get("", "llm.apiKey");
-      const model = this.config.get("qwen/qwen3-coder:free", "llm.model");
+      const model = this.config.get("tngtech/deepseek-r1t2-chimera:free", "llm.model");
       const timeoutMs = this.config.get(6e4, "llm.timeouts.generationMs");
-      const maxRetries = this.config.get(3, "llm.maxRetries");
+      const maxRetries = this.config.get(20, "llm.maxRetries");
       const retryDelayBaseMs = this.config.get(1e3, "llm.retryDelayBaseMs");
       let urlToUse = apiEndpoint;
       try {
@@ -212,7 +145,7 @@ var HypoAssistant = (() => {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        const combinedSignal = AbortSignal.any([signal, controller.signal]);
+        const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
         try {
           const headers = {
             "Content-Type": "application/json",
@@ -454,42 +387,160 @@ ${src.content}
       }).filter(Boolean).join("\n\n");
       const patchPrompt = {
         role: "system",
-        content: `Generate a minimal, safe patch that fulfills the user request.
-Return a JSON object with:
+        content: `You are a precise frontend editor. Fulfill the user request by choosing **one** of the following tools:
+
 {
-  "file": "file_id",
-  "from": "exact substring to replace",
-  "to": "replacement content"
+  "tool": "setTextContent",
+  "selector": "CSS selector (must be unique and safe)",
+  "text": "new text content"
 }
+
+{
+  "tool": "setAttribute",
+  "selector": "CSS selector",
+  "name": "attribute name",
+  "value": "attribute value"
+}
+
+{
+  "tool": "insertAdjacentHTML",
+  "selector": "CSS selector of target element",
+  "position": "beforebegin | afterbegin | beforeend | afterend",
+  "html": "safe HTML string"
+}
+
+{
+  "tool": "addStyleRule",
+  "selector": "CSS selector",
+  "style": "CSS rules, e.g. 'color: red; font-weight: bold'"
+}
+
+{
+  "tool": "removeElement",
+  "selector": "CSS selector"
+}
+
+{
+  "tool": "wrapElement",
+  "selector": "CSS selector of element to wrap",
+  "wrapperTag": "HTML tag name, e.g. 'div'",
+  "wrapperClass": "optional CSS class for wrapper"
+}
+
+{
+  "tool": "applyTextPatch",
+  "file": "file_id (e.g. 'HTML_DOC')",
+  "from": "exact substring in original file content",
+  "to": "replacement substring"
+}
+
 Rules:
-- NEVER use innerHTML.
-- The "from" string must appear exactly in the provided file.
-- Be minimal and surgical.
-- Return ONLY valid JSON. No markdown, no explanation.`
+- Prefer non-destructive, incremental DOM changes.
+- NEVER generate JavaScript code or use eval.
+- Ensure selector uniquely identifies the target.
+- Return ONLY valid JSON. No markdown, no explanation.
+`
       };
       const userMsg = { role: "user", content: `Context:
 ${contextBlocks}
 
 User request: ${userQuery}` };
       const patchRes = await this.llm.call([patchPrompt, userMsg], "patch", signal);
-      const finalPatch = {
-        file: patchRes.file || relevantIds[0],
-        from: patchRes.from,
-        to: patchRes.to
-      };
-      console.log("\u{1F3C6} Final patch:", finalPatch);
+      let toolCall;
+      if (patchRes.tool === "setTextContent") {
+        toolCall = { tool: "setTextContent", selector: patchRes.selector, text: patchRes.text };
+      } else if (patchRes.tool === "setAttribute") {
+        toolCall = { tool: "setAttribute", selector: patchRes.selector, name: patchRes.name, value: patchRes.value };
+      } else if (patchRes.tool === "insertAdjacentHTML") {
+        toolCall = { tool: "insertAdjacentHTML", selector: patchRes.selector, position: patchRes.position, html: patchRes.html };
+      } else if (patchRes.tool === "addStyleRule") {
+        toolCall = { tool: "addStyleRule", selector: patchRes.selector, style: patchRes.style };
+      } else if (patchRes.tool === "removeElement") {
+        toolCall = { tool: "removeElement", selector: patchRes.selector };
+      } else if (patchRes.tool === "wrapElement") {
+        toolCall = { tool: "wrapElement", selector: patchRes.selector, wrapperTag: patchRes.wrapperTag, wrapperClass: patchRes.wrapperClass };
+      } else if (patchRes.tool === "applyTextPatch") {
+        toolCall = { tool: "applyTextPatch", file: patchRes.file, from: patchRes.from, to: patchRes.to };
+      } else {
+        throw new Error("Invalid tool response from LLM");
+      }
+      console.log("\u{1F3C6} Final tool call:", toolCall);
       const diagnostics = this.storage.getDiagnostics();
       diagnostics.runs.push({
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        phase: "final_patch",
-        data: finalPatch
+        phase: "final_tool_call",
+        data: toolCall
       });
       this.storage.saveDiagnostics(diagnostics);
       console.groupEnd();
       return {
-        message: "Patch generated via direct LLM request.",
-        patches: [finalPatch]
+        message: "Patch generated via tool-based LLM request.",
+        patches: [toolCall]
       };
+    }
+  };
+
+  // src/core/PatchManager.ts
+  function deepClone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+  var PatchManager = class {
+    // ТЕЗИС: Все изменения применяются через безопасные DOM-операции, fallback на текстовый патч — только в крайнем случае.
+    static applyToolCalls(toolCalls) {
+      for (const call of toolCalls) {
+        try {
+          if (call.tool === "setTextContent") {
+            const el = document.querySelector(call.selector);
+            if (el) el.textContent = call.text;
+          } else if (call.tool === "setAttribute") {
+            const el = document.querySelector(call.selector);
+            if (el) el.setAttribute(call.name, call.value);
+          } else if (call.tool === "insertAdjacentHTML") {
+            const el = document.querySelector(call.selector);
+            if (el) el.insertAdjacentHTML(call.position, call.html);
+          } else if (call.tool === "addStyleRule") {
+            const style = document.createElement("style");
+            style.textContent = `${call.selector} { ${call.style} }`;
+            document.head.appendChild(style);
+          } else if (call.tool === "removeElement") {
+            const el = document.querySelector(call.selector);
+            if (el) el.remove();
+          } else if (call.tool === "wrapElement") {
+            const el = document.querySelector(call.selector);
+            if (el && el.parentNode) {
+              const wrapper = document.createElement(call.wrapperTag);
+              if (call.wrapperClass) wrapper.className = call.wrapperClass;
+              el.parentNode.replaceChild(wrapper, el);
+              wrapper.appendChild(el);
+            }
+          } else if (call.tool === "applyTextPatch") {
+            const originalsRaw = localStorage.getItem("hypoAssistantOriginals");
+            if (!originalsRaw) continue;
+            const originals = JSON.parse(originalsRaw);
+            const patched = this.applyTextPatch(originals, call);
+            const htmlSource = patched["HTML_DOC"];
+            if (htmlSource) {
+              document.open();
+              document.write(htmlSource.content);
+              document.close();
+            }
+          }
+        } catch (e) {
+          console.error("Failed to apply tool:", call, e);
+        }
+      }
+    }
+    // ТЕЗИС: applyTextPatch — внутренний fallback, не экспонируется напрямую.
+    static applyTextPatch(sources, patch) {
+      const patched = deepClone(sources);
+      const file = patched[patch.file];
+      if (!file) return patched;
+      const fullFrom = file.signatureStart + patch.from + file.signatureEnd;
+      const fullTo = file.signatureStart + patch.to + file.signatureEnd;
+      if (file.content.includes(fullFrom)) {
+        file.content = file.content.replace(fullFrom, fullTo);
+      }
+      return patched;
     }
   };
 
@@ -502,35 +553,69 @@ User request: ${userQuery}` };
     abortController = null;
     getTemplate() {
       return `
-      <style>
-        #hypo-panel { position: fixed; right: 0; top: 0; width: 360px; height: 100vh;
-          background: #1e1e1e; color: #e0e0e0; font-family: monospace; z-index: 10000;
-          box-shadow: -2px 0 10px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
-        #hypo-header { padding: 10px; background: #2d2d2d; font-weight: bold; }
-        #hypo-chat { flex: 1; overflow-y: auto; padding: 10px; font-size: 13px; }
-        .msg { margin: 8px 0; white-space: pre-wrap; }
-        .user { color: #4caf50; }
-        .assist { color: #2196f3; }
-        #hypo-input { display: flex; padding: 10px; background: #252526; }
-        #hypo-input input { flex: 1; background: #333; color: white; border: none; padding: 8px; border-radius: 3px; }
-        #hypo-input button { background: #007acc; color: white; border: none; padding: 8px 12px; margin-left: 8px; border-radius: 3px; cursor: pointer; }
-        #hypo-actions { padding: 10px; display: flex; gap: 6px; }
-        #hypo-actions button { flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
-      </style>
-      <div id="hypo-panel">
-        <div id="hypo-header">\u{1F99B} HypoAssistant v1.1</div>
-        <div id="hypo-chat"></div>
-        <div id="hypo-input">
-          <input type="text" placeholder="Describe change..." id="hypo-input-field">
-          <button id="hypo-send">Send</button>
-        </div>
-        <div id="hypo-actions">
-          <button id="hypo-export">Export HTML</button>
-          <button id="hypo-settings">\u2699\uFE0F Settings</button>
-          <button id="hypo-reload">\u{1F504} Reload</button>
-        </div>
+    <!-- Floating button (collapsed state) -->
+    <div id="hypo-toggle" style="
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 56px;
+      height: 56px;
+      background: #6c63ff;
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 10000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      font-size: 24px;
+      line-height: 1;
+      font-family: sans-serif;
+    ">\u{1F99B}</div>
+
+    <!-- Full panel (hidden by default) -->
+    <div id="hypo-panel" style="
+      display: none;
+      position: fixed;
+      right: 0;
+      top: 0;
+      width: 100vw;
+      height: 100vh;
+      max-width: 360px;
+      background: #1e1e1e;
+      color: #e0e0e0;
+      font-family: monospace;
+      z-index: 10000;
+      box-shadow: -2px 0 10px rgba(0,0,0,0.5);
+      display: none;
+      flex-direction: column;
+    ">
+      <div style="padding: 10px; background: #2d2d2d; display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-weight: bold;">\u{1F99B} HypoAssistant v1.1</div>
+        <button id="hypo-collapse" style="
+          background: #555;
+          color: white;
+          border: none;
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          cursor: pointer;
+          font-size: 14px;
+        ">\u2715</button>
       </div>
-    `;
+      <div id="hypo-chat" style="flex: 1; overflow-y: auto; padding: 10px; font-size: 13px;"></div>
+      <div style="display: flex; padding: 10px; background: #252526;">
+        <input type="text" placeholder="Describe change..." id="hypo-input-field" style="flex: 1; background: #333; color: white; border: none; padding: 8px; border-radius: 3px;">
+        <button id="hypo-send" style="background: #007acc; color: white; border: none; padding: 8px 12px; margin-left: 8px; border-radius: 3px; cursor: pointer;">Send</button>
+      </div>
+      <div style="padding: 10px; display: flex; gap: 6px;">
+        <button id="hypo-export" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">Export HTML</button>
+        <button id="hypo-settings" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u2699\uFE0F Settings</button>
+        <button id="hypo-reload" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F504} Reload</button>
+      </div>
+    </div>
+  `;
     }
     show() {
       if (this.panel) return;
@@ -538,6 +623,17 @@ User request: ${userQuery}` };
       this.panel.id = "hypo-assistant-core";
       this.panel.innerHTML = this.getTemplate();
       document.body.appendChild(this.panel);
+      const toggleBtn = document.getElementById("hypo-toggle");
+      const panel = document.getElementById("hypo-panel");
+      const collapseBtn = document.getElementById("hypo-collapse");
+      toggleBtn.onclick = () => {
+        toggleBtn.style.display = "none";
+        panel.style.display = "flex";
+      };
+      collapseBtn.onclick = () => {
+        panel.style.display = "none";
+        toggleBtn.style.display = "flex";
+      };
       const chat = document.getElementById("hypo-chat");
       const input = document.getElementById("hypo-input-field");
       const send = document.getElementById("hypo-send");
@@ -571,13 +667,8 @@ User request: ${userQuery}` };
           if (confirm("Apply patch?")) {
             const patches = JSON.parse(localStorage.getItem("hypoAssistantPatches") || "[]");
             localStorage.setItem("hypoAssistantPatches", JSON.stringify([...patches, ...res.patches]));
-            const originalsRaw = localStorage.getItem("hypoAssistantOriginals");
-            if (originalsRaw) {
-              const originals = JSON.parse(originalsRaw);
-              const patched = (await Promise.resolve().then(() => (init_PatchManager(), PatchManager_exports))).PatchManager.applyPatches(originals, [...patches, ...res.patches]);
-              (await Promise.resolve().then(() => (init_PatchManager(), PatchManager_exports))).PatchManager.injectPatchedSources(patched);
-              addMsg("\u2705 Applied. Page reloaded.", "assist");
-            }
+            PatchManager.applyToolCalls(res.patches);
+            addMsg("\u2705 Applied.", "assist");
           }
         } catch (err) {
           if (err.name !== "AbortError") {
@@ -600,13 +691,22 @@ User request: ${userQuery}` };
       settings.onclick = () => {
         const currentConfigRaw = localStorage.getItem("hypoAssistantConfig");
         const currentConfig = currentConfigRaw ? JSON.parse(currentConfigRaw) : {};
-        const ep = prompt("API Endpoint:", currentConfig.apiEndpoint || "https://openrouter.ai/api/v1/chat/completions") || currentConfig.apiEndpoint;
-        const key = prompt("API Key:") || currentConfig.apiKey;
-        const model = prompt("Model:", currentConfig.model || "qwen/qwen3-coder:free") || currentConfig.model;
-        const newConfig = { ...currentConfig, apiEndpoint: ep, apiKey: key, model };
+        const currentLlm = currentConfig.llm || {};
+        const ep = prompt("API Endpoint:", currentLlm.apiEndpoint || "https://openrouter.ai/api/v1/chat/completions") || currentLlm.apiEndpoint;
+        const key = prompt("API Key:") || currentLlm.apiKey;
+        const model = prompt("Model:", currentLlm.model || "qwen/qwen3-coder:free") || currentLlm.model;
+        const newConfig = {
+          ...currentConfig,
+          llm: {
+            ...currentLlm,
+            apiEndpoint: ep,
+            apiKey: key,
+            model
+          }
+        };
         localStorage.setItem("hypoAssistantConfig", JSON.stringify(newConfig));
         addMsg("\u2705 Config saved.", "assist");
-        if (key && key !== currentConfig.apiKey) {
+        if (key && key !== currentLlm.apiKey) {
           localStorage.removeItem("hypoAssistantSemanticIndex");
           addMsg("\u{1F504} Semantic index will be rebuilt on next request.", "assist");
         }
@@ -617,11 +717,26 @@ User request: ${userQuery}` };
   // src/main.ts
   (async () => {
     "use strict";
+    if (document.getElementById("hypo-assistant-core")) {
+      console.warn("[HypoAssistant] Already initialized. Skipping.");
+      return;
+    }
     const config = new AppConfig();
     await config.init();
     const storage = new StorageAdapter();
     const llm = new LLMClient(config, storage);
     const engine = new HypoAssistantEngine(config, storage, llm);
+    const savedPatches = storage.getPatches();
+    if (savedPatches.length > 0) {
+      const toolCalls = savedPatches.map((p) => {
+        if ("tool" in p) {
+          return p;
+        } else {
+          return { tool: "applyTextPatch", file: p.file, from: p.from, to: p.to };
+        }
+      });
+      PatchManager.applyToolCalls(toolCalls);
+    }
     const ui = new HypoAssistantUI(async (query, signal) => {
       return await engine.run(query, signal);
     });
