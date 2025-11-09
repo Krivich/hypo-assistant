@@ -1,0 +1,13 @@
+{
+  "name": "hypo-assistant",
+  "version": "1.1.0",
+  "description": "Live RAG-based code editing assistant",
+  "scripts": {
+    "build": "node build.cjs"
+  },
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}

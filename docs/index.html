@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Primary Meta Tags -->
+    <title>HypoAssistant — Live Site Editing in Your Browser</title>
+    <meta name="title" content="🦛 HypoAssistant — Live Site Editing in Your Browser">
+    <meta name="description" content="A local, RAG-powered assistant that lets you edit any website in real time — no source code, no build, no waiting.">
+    <meta name="keywords" content="live editing, RAG, LLM, browser, code patching, frontend, HypoAssistant, on-the-fly modification">
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://Krivich.github.io/hypo-assistant/">
+    <meta property="og:title" content="🦛 HypoAssistant — Live Site Editing in Your Browser">
+    <meta property="og:description" content="A local, RAG-powered assistant that lets you edit any website in real time — no source code, no build, no waiting.">
+    <meta property="og:image" content="https://Krivich.github.io/hypo-assistant/preview.png">
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://Krivich.github.io/hypo-assistant/">
+    <meta property="twitter:title" content="🦛 HypoAssistant — Live Site Editing in Your Browser">
+    <meta property="twitter:description" content="A local, RAG-powered assistant that lets you edit any website in real time — no source code, no build, no waiting.">
+    <meta property="twitter:image" content="https://Krivich.github.io/hypo-assistant/preview.png">
+    <!-- Schema.org -->
+    <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "HypoAssistant",
+            "description": "A browser-based tool for real-time, RAG-augmented live editing of websites without access to source code.",
+            "applicationCategory": "DeveloperTool",
+            "operatingSystem": "Web",
+            "author": {
+                "@type": "Person",
+                "name": "Krivich"
+            },
+            "license": "https://github.com/Krivich/hypo-assistant/blob/main/LICENSE",
+            "url": "https://Krivich.github.io/hypo-assistant/"
+        }
+    </script>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='48' font-family='system-ui'>🦛</text></svg>">
+    <!-- Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SEO: alternate language versions -->
+    <link rel="alternate" hreflang="ru" href="#ru" />
+    <link rel="alternate" hreflang="en" href="#en" />
+    <link rel="alternate" hreflang="zh" href="#zh" />
+    <style>
+        :root {
+            --bg: #ffffff;
+            --text: #111111;
+            --text-light: #666666;
+            --primary: #6c63ff;
+            --border: #e0e0e0;
+            --card: #ffffff;
+            --shadow: 0 10px 40px rgba(0,0,0,0.05);
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 16px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 32px;
+            justify-content: space-between;
+        }
+        .app-title {
+            font-weight: 700;
+            font-size: 24px;
+            color: var(--primary);
+            letter-spacing: -0.4px;
+        }
+        .lang-switch {
+            display: flex;
+            gap: 8px;
+        }
+        .lang-btn {
+            padding: 4px 8px;
+            font-size: 12px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .lang-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            line-height: 1.2;
+        }
+        h2 {
+            font-size: 22px;
+            font-weight: 600;
+            margin: 32px 0 16px;
+            color: var(--primary);
+        }
+        p, li {
+            margin-bottom: 16px;
+        }
+        ul {
+            padding-left: 24px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 24px;
+            margin: 24px 0;
+            box-shadow: var(--shadow);
+        }
+        .flow-step {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            align-items: flex-start;
+        }
+        .flow-number {
+            width: 28px;
+            height: 28px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-weight: 600;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.95em;
+        }
+        .footer {
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            color: var(--text-light);
+            font-size: 14px;
+        }
+        a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .ru .en-only,
+        .ru .zh-only,
+        .en .ru-only,
+        .en .zh-only,
+        .zh .ru-only,
+        .zh .en-only {
+            display: none !important;
+        }
+        @media (max-width: 600px) {
+            .container { padding: 12px; }
+            .header { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .app-title { font-size: 20px; word-break: break-word; }
+            .lang-switch { align-self: flex-end; }
+            code { word-break: break-all; white-space: normal; }
+            h1 { font-size: 24px; line-height: 1.3; }
+            .card { padding: 16px; }
+        }
+    </style>
+</head>
+<body class="en">
+<div class="container">
+    <div class="header">
+        <div class="app-title">🦛 HypoAssistant</div>
+        <div class="lang-switch">
+            <button class="lang-btn" data-lang="ru">Русский</button>
+            <button class="lang-btn active" data-lang="en">English</button>
+            <button class="lang-btn" data-lang="zh">中文</button>
+        </div>
+    </div>
+
+    <h1 class="ru-only">Живое редактирование сайтов — прямо в браузере</h1>
+    <h1 class="en-only">Live Site Editing — Right in Your Browser</h1>
+    <h1 class="zh-only">实时网站编辑——就在您的浏览器中</h1>
+
+    <p class="ru-only">
+        <strong>Не ждите, пока разработчики что-то исправят. Сделайте удобнее — для себя, здесь и сейчас.</strong><br>
+        HypoAssistant — это локальный ассистент, который помогает вносить изменения в любой веб-сайт <strong>без доступа к исходному коду</strong>, без сборки и без перезагрузки (когда это возможно).
+    </p>
+    <p class="en-only">
+        <strong>Don’t wait for developers to fix what bothers you. Make it better — for yourself, right now.</strong><br>
+        HypoAssistant is a local assistant that helps you modify any website <strong>without access to source code</strong>, without builds, and without reloads (when possible).
+    </p>
+    <p class="zh-only">
+        <strong>不要等待开发者修复困扰您的问题。现在就为自己让它变得更好。</strong><br>
+        HypoAssistant 是一个本地助手，可帮助您修改任何网站，<strong>无需访问源代码</strong>，无需构建，也无需重新加载（如可能）。
+    </p>
+
+    <h2 class="ru-only">Как это работает?</h2>
+    <h2 class="en-only">How it works</h2>
+    <h2 class="zh-only">工作原理</h2>
+
+    <div class="flow-step">
+        <div class="flow-number">1</div>
+        <div class="ru-only"><strong>Анализ</strong> — считывает HTML, стили, скрипты со страницы.</div>
+        <div class="en-only"><strong>Analysis</strong> — reads HTML, styles, scripts from the page.</div>
+        <div class="zh-only"><strong>分析</strong> — 从页面读取 HTML、样式和脚本。</div>
+    </div>
+    <div class="flow-step">
+        <div class="flow-number">2</div>
+        <div class="ru-only"><strong>Запрос</strong> — вы описываете изменение на естественном языке.</div>
+        <div class="en-only"><strong>Request</strong> — you describe a change in plain language.</div>
+        <div class="zh-only"><strong>请求</strong> — 您用自然语言描述所需更改。</div>
+    </div>
+    <div class="flow-step">
+        <div class="flow-number">3</div>
+        <div class="ru-only"><strong>Патч</strong> — генерируется минимальное, обратимое изменение кода.</div>
+        <div class="en-only"><strong>Patch</strong> — generates a minimal, reversible code change.</div>
+        <div class="zh-only"><strong>补丁</strong> — 生成最小化、可逆的代码更改。</div>
+    </div>
+    <div class="flow-step">
+        <div class="flow-number">4</div>
+        <div class="ru-only"><strong>Применение</strong> — вы подтверждаете и применяете его локально.</div>
+        <div class="en-only"><strong>Apply</strong> — you approve and apply it locally.</div>
+        <div class="zh-only"><strong>应用</strong> — 您确认并在本地应用更改。</div>
+    </div>
+
+    <h2 class="ru-only">Попробуйте сейчас!</h2>
+    <h2 class="en-only">Try it now!</h2>
+    <h2 class="zh-only">立即尝试！</h2>
+
+    <p class="ru-only">Откройте панель (в правом верхнем углу) и попросите:</p>
+    <p class="en-only">Open the panel (top-right corner) and ask:</p>
+    <p class="zh-only">打开面板（右上角）并输入：</p>
+
+    <ul>
+        <li class="ru-only">«Сделай фон светло-голубым»</li>
+        <li class="en-only">“Make the background light blue”</li>
+        <li class="zh-only">“将背景设为浅蓝色”</li>
+
+        <li class="ru-only">«Добавь кнопку с надписью “Привет”»</li>
+        <li class="en-only">“Add a button that says ‘Hello’”</li>
+        <li class="zh-only">“添加一个写着‘你好’的按钮”</li>
+    </ul>
+
+    <div class="card">
+        <p class="ru-only">⚠️ <strong>Важно</strong>: у нас нет сервера, поэтому ваши данные никогда не попадают к нам. Однако при использовании внешней LLM <strong>весь проиндексированный код страницы (HTML, JS, CSS)</strong> может быть отправлен провайдеру модели. Не используйте HypoAssistant на страницах с конфиденциальной информацией, если вы не доверяете провайдеру. Для полной приватности используйте локальные модели.</p>
+        <p class="en-only">⚠️ <strong>Note</strong>: We have no server, so your data never reaches us. However, if you use a cloud-based LLM, <strong>the entire indexed code of the page (HTML, JS, CSS)</strong> may be sent to the model provider. Do not use HypoAssistant on pages with confidential information unless you trust the provider. For full privacy, use local models.</p>
+        <p class="zh-only">⚠️ <strong>注意</strong>：我们没有服务器，因此您的数据永远不会发送给我们。但如果您使用基于云的 LLM，<strong>页面的全部已索引代码（HTML、JS、CSS）</strong>可能会发送给模型提供商。如果您不信任该提供商，请勿在包含机密信息的页面上使用 HypoAssistant。如需完全隐私，请使用本地模型。</p>
+    </div>
+
+    <h2 class="ru-only">Принципы</h2>
+    <h2 class="en-only">Principles</h2>
+    <h2 class="zh-only">原则</h2>
+
+    <ul>
+        <li class="ru-only">🧠 <strong>Минимализм</strong> — код понятен за 5 минут</li>
+        <li class="en-only">🧠 <strong>Minimalism</strong> — code understandable in 5 minutes</li>
+        <li class="zh-only">🧠 <strong>极简主义</strong> — 代码5分钟内即可理解</li>
+
+        <li class="ru-only">🧱 <strong>DOM в HTML</strong> — JS управляет, не генерирует разметку</li>
+        <li class="en-only">🧱 <strong>DOM in HTML</strong> — JS manages, never generates markup</li>
+        <li class="zh-only">🧱 <strong>DOM 在 HTML 中</strong> — JS 仅管理，不生成标记</li>
+
+        <li class="ru-only">🔒 <strong>Строгая типизация</strong> — TypeScript strict от начала до конца</li>
+        <li class="en-only">🔒 <strong>Strict typing</strong> — TypeScript strict from start to finish</li>
+        <li class="zh-only">🔒 <strong>严格类型</strong> — 从头到尾使用 TypeScript strict</li>
+    </ul>
+
+    <div class="footer">
+        <p>
+            <span class="ru-only"><a href="https://github.com/Krivich/hypo-assistant" target="_blank">→ GitHub</a> • MIT License</span>
+            <span class="en-only"><a href="https://github.com/Krivich/hypo-assistant" target="_blank">→ GitHub</a> • MIT License</span>
+            <span class="zh-only"><a href="https://github.com/Krivich/hypo-assistant" target="_blank">→ GitHub</a> • MIT 许可证</span>
+        </p>
+    </div>
+</div>
+
+<script src="./HypoAssistant.js"></script>
+
+<script>
+    const hashLang = window.location.hash.replace('#', '');
+    const validLangs = ['ru', 'en', 'zh'];
+    let lang = validLangs.includes(hashLang) ? hashLang : (navigator.language?.split('-')[0] || 'en');
+    if (!validLangs.includes(lang)) lang = 'en';
+
+    document.body.className = lang;
+
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        const btnLang = btn.dataset.lang;
+        btn.classList.toggle('active', btnLang === lang);
+    });
+
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const newLang = btn.dataset.lang;
+            document.body.className = newLang;
+            window.location.hash = newLang;
+            document.querySelectorAll('.lang-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.lang === newLang);
+            });
+        });
+    });
+
+    window.addEventListener('hashchange', () => {
+        const newHash = window.location.hash.replace('#', '');
+        if (validLangs.includes(newHash)) {
+            document.body.className = newHash;
+            document.querySelectorAll('.lang-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.lang === newHash);
+            });
+        }
+    });
+</script>
+</body>
+</html>
