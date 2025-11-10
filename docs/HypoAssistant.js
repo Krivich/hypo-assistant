@@ -788,70 +788,88 @@ User request: ${userQuery}`
     }
     panel = null;
     abortController = null;
+    patchItemTemplate = null;
     getTemplate() {
       return `
-    <!-- Floating button (collapsed state) -->
-    <div id="hypo-toggle" style="
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 56px;
-      height: 56px;
-      background: #6c63ff;
-      color: white;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      z-index: 10000;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-      font-size: 24px;
-    ">\u{1F99B}</div>
+<!-- Floating toggle button -->
+<div id="hypo-toggle" style="
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  background: #6c63ff;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  font-size: 24px;
+">\u{1F99B}</div>
 
-    <!-- Full panel (hidden by default) -->
-    <div id="hypo-panel" style="
-      display: none;
-      position: fixed;
-      right: 0;
-      top: 0;
-      width: 100vw;
-      height: 100vh;
-      max-width: 360px;
-      background: #1e1e1e;
-      color: #e0e0e0;
-      font-family: monospace;
-      z-index: 10000;
-      box-shadow: -2px 0 10px rgba(0,0,0,0.5);
-      display: none;
-      flex-direction: column;
-    ">
-      <div style="padding: 10px; background: #2d2d2d; display: flex; justify-content: space-between; align-items: center;">
-        <div style="font-weight: bold;">\u{1F99B} HypoAssistant v1.1</div>
-        <button id="hypo-collapse" style="
-          background: #555;
-          color: white;
-          border: none;
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          cursor: pointer;
-          font-size: 14px;
-        ">\u2715</button>
-      </div>
-      <div id="hypo-chat" style="flex: 1; overflow-y: auto; padding: 10px; font-size: 13px;"></div>
-      <div style="display: flex; padding: 10px; background: #252526;">
-        <input type="text" placeholder="Describe change..." id="hypo-input-field" style="flex: 1; background: #333; color: white; border: none; padding: 8px; border-radius: 3px;">
-        <button id="hypo-send" style="background: #007acc; color: white; border: none; padding: 8px 12px; margin-left: 8px; border-radius: 3px; cursor: pointer;">Send</button>
-      </div>
-      <div style="padding: 10px; display: flex; gap: 6px;">
-        <button id="hypo-export" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F4E4} Export</button>
-        <button id="hypo-patch-manager" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F9E9} Patches</button>
-        <button id="hypo-settings" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u2699\uFE0F Settings</button>
-        <button id="hypo-reload" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F504} Reload</button>
-      </div>
-    </div>
-  `;
+<!-- Main panel -->
+<div id="hypo-panel" style="
+  display: none;
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-width: 360px;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  font-family: monospace;
+  z-index: 10000;
+  box-shadow: -2px 0 10px rgba(0,0,0,0.5);
+  flex-direction: column;
+">
+  <div style="padding: 10px; background: #2d2d2d; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+    <div style="font-weight: bold;">\u{1F99B} HypoAssistant v1.1</div>
+    <button id="hypo-collapse" style="
+      background: #555;
+      color: white;
+      border: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 14px;
+    ">\u2715</button>
+  </div>
+  <div id="hypo-chat" style="
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    font-size: 13px;
+    min-height: 0;
+  "></div>
+  <div style="display: flex; padding: 10px; background: #252526; flex-shrink: 0;">
+    <input type="text" placeholder="Describe change..." id="hypo-input-field" style="flex: 1; background: #333; color: white; border: none; padding: 8px; border-radius: 3px;">
+    <button id="hypo-send" style="background: #007acc; color: white; border: none; padding: 8px 12px; margin-left: 8px; border-radius: 3px; cursor: pointer;">Send</button>
+  </div>
+  <div style="padding: 10px; display: flex; gap: 6px; flex-shrink: 0;">
+    <button id="hypo-export" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F4E4} Export</button>
+    <button id="hypo-patch-manager" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F9E9} Patches</button>
+    <button id="hypo-settings" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u2699\uFE0F Settings</button>
+    <button id="hypo-reload" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F504} Reload</button>
+  </div>
+</div>
+
+<!-- Hidden template for patch items -->
+<template id="hypo-patch-item-template">
+  <div style="margin:8px 0; padding:8px; background:#3a3a3a; border-radius:4px;">
+    <label style="display:flex; align-items:center; gap:8px;">
+      <input type="checkbox">
+      <span style="color:white;"></span>
+    </label>
+    <small style="color:#888; font-size:11px;"></small>
+  </div>
+</template>
+        `;
     }
     show() {
       if (this.panel) return;
@@ -859,144 +877,164 @@ User request: ${userQuery}`
       this.panel.id = "hypo-assistant-core";
       this.panel.innerHTML = this.getTemplate();
       document.body.appendChild(this.panel);
+      this.patchItemTemplate = document.getElementById("hypo-patch-item-template");
       const toggleBtn = document.getElementById("hypo-toggle");
-      const panel = document.getElementById("hypo-panel");
+      const mainPanel = document.getElementById("hypo-panel");
       const collapseBtn = document.getElementById("hypo-collapse");
       const chat = document.getElementById("hypo-chat");
       const input = document.getElementById("hypo-input-field");
-      const send = document.getElementById("hypo-send");
+      const sendBtn = document.getElementById("hypo-send");
       const exportBtn = document.getElementById("hypo-export");
       const patchManagerBtn = document.getElementById("hypo-patch-manager");
-      const settings = document.getElementById("hypo-settings");
-      const reload = document.getElementById("hypo-reload");
-      toggleBtn.onclick = () => {
-        toggleBtn.style.display = "none";
-        panel.style.display = "flex";
-      };
-      collapseBtn.onclick = () => {
-        panel.style.display = "none";
-        toggleBtn.style.display = "flex";
-      };
-      const addMsg = (text, cls) => {
-        const el = document.createElement("div");
-        el.className = `msg ${cls}`;
-        el.textContent = text;
-        chat.appendChild(el);
+      const settingsBtn = document.getElementById("hypo-settings");
+      const reloadBtn = document.getElementById("hypo-reload");
+      const addMessage = (text, role) => {
+        const msg = document.createElement("div");
+        msg.className = `msg ${role}`;
+        msg.textContent = text;
+        chat.appendChild(msg);
         chat.scrollTop = chat.scrollHeight;
       };
-      send.onclick = async () => {
+      const showPatchList = () => {
+        const patches = this.storage.getPatches();
+        chat.innerHTML = "";
+        if (patches.length === 0) {
+          const empty = document.createElement("p");
+          empty.style.color = "#888";
+          empty.textContent = "No patches yet.";
+          chat.appendChild(empty);
+        } else {
+          patches.forEach((p) => {
+            const frag = document.importNode(this.patchItemTemplate.content, true);
+            const checkbox = frag.querySelector("input");
+            const titleSpan = frag.querySelector("span");
+            const dateEl = frag.querySelector("small");
+            checkbox.dataset.id = p.id;
+            checkbox.checked = p.enabled;
+            titleSpan.textContent = p.title;
+            titleSpan.title = p.id;
+            dateEl.textContent = new Date(p.createdAt).toLocaleString();
+            checkbox.addEventListener("change", () => {
+              const id = checkbox.dataset.id;
+              if (!id) return;
+              const current = this.storage.getPatches();
+              const updated = current.map((pp) => pp.id === id ? { ...pp, enabled: checkbox.checked } : pp);
+              this.storage.savePatches(updated);
+              if (checkbox.checked) {
+                const patch = updated.find((pp) => pp.id === id);
+                PatchManager.applyToolCalls([patch.toolCall]);
+              }
+            });
+            chat.appendChild(frag);
+          });
+        }
+        const backBtn = document.createElement("button");
+        backBtn.textContent = "\u2190 Back to chat";
+        backBtn.style.cssText = `
+                margin-top: 12px;
+                padding: 6px 12px;
+                background: #555;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 12px;
+            `;
+        backBtn.onclick = () => {
+          chat.innerHTML = "";
+          addMessage("\u{1F99B} Ready. Describe your change.", "assist");
+        };
+        chat.appendChild(backBtn);
+      };
+      toggleBtn.onclick = () => {
+        toggleBtn.style.display = "none";
+        mainPanel.style.display = "flex";
+      };
+      collapseBtn.onclick = () => {
+        mainPanel.style.display = "none";
+        toggleBtn.style.display = "flex";
+      };
+      patchManagerBtn.onclick = () => showPatchList();
+      sendBtn.onclick = async () => {
         const query = input.value.trim();
         if (!query) return;
         input.value = "";
-        addMsg(query, "user");
+        addMessage(query, "user");
         this.abortController?.abort();
         this.abortController = new AbortController();
-        const configKey = "hypoAssistantConfig";
-        const configRaw = localStorage.getItem(configKey);
+        const configRaw = localStorage.getItem("hypoAssistantConfig");
         const config = configRaw ? JSON.parse(configRaw) : {};
-        if (!config.apiKey) {
-          addMsg("\u26A0\uFE0F Set API key in \u2699\uFE0F", "assist");
+        const llmConfig = config.llm || {
+          apiKey: config.apiKey,
+          apiEndpoint: config.apiEndpoint,
+          model: config.model
+        };
+        if (!llmConfig.apiKey) {
+          addMessage("\u26A0\uFE0F Set API key in \u2699\uFE0F", "assist");
           return;
         }
         try {
-          const res = await this.onUserRequest(query, this.abortController.signal);
-          addMsg(res.message, "assist");
+          const result = await this.onUserRequest(query, this.abortController.signal);
+          addMessage(result.groupTitle, "assist");
           if (confirm("Apply patch?")) {
-            const existingPatches = this.storage.getPatches();
-            const allPatches = [...existingPatches, ...res.patches];
-            const toolCalls = res.patches.map((p) => p.toolCall);
-            PatchManager.applyToolCalls(toolCalls);
-            this.storage.savePatches(allPatches);
-            addMsg('\u2705 Applied. Enable in "\u{1F9E9} Patches" to persist.', "assist");
+            const existing = this.storage.getPatches();
+            const updated = [...existing, ...result.patches];
+            PatchManager.applyToolCalls(result.patches.map((p) => p.toolCall));
+            this.storage.savePatches(updated);
+            addMessage('\u2705 Applied. Enable in "\u{1F9E9} Patches" to persist.', "assist");
           }
         } catch (err) {
           if (err.name !== "AbortError") {
-            addMsg(`\u274C ${err.message}`, "assist");
+            addMessage(`\u274C ${err.message}`, "assist");
           }
         }
       };
       exportBtn.onclick = () => {
-        const tempDoc = document.cloneNode(true);
-        const hypoScript = tempDoc.querySelector('script[src="./HypoAssistant.js"]');
-        if (hypoScript) hypoScript.remove();
-        tempDoc.querySelectorAll("script:not([src]):not([id])").forEach((script) => {
-          if (script.textContent?.includes("hashLang")) script.remove();
+        const clonedDoc = document.cloneNode(true);
+        const script = clonedDoc.querySelector('script[src="./HypoAssistant.js"]');
+        if (script) script.remove();
+        clonedDoc.querySelectorAll("script:not([src]):not([id])").forEach((el) => {
+          if (el.textContent?.includes("hashLang")) el.remove();
         });
-        const coreEl = tempDoc.getElementById("hypo-assistant-core");
-        if (coreEl) coreEl.remove();
-        const html = `<!DOCTYPE html>
-${tempDoc.documentElement.outerHTML}`;
-        const blob = new Blob([html], { type: "text/html" });
+        const core = clonedDoc.getElementById("hypo-assistant-core");
+        if (core) core.remove();
+        const blob = new Blob([`<!DOCTYPE html>
+${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         a.download = "patched-page.html";
-        document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
         URL.revokeObjectURL(url);
       };
-      patchManagerBtn.onclick = () => {
-        const patches = this.storage.getPatches();
-        const panelEl = document.createElement("div");
-        panelEl.innerHTML = `
-        <div style="background:#2d2d2d; padding:10px; max-height:60vh; overflow:auto;">
-          <h3 style="margin:0 0 10px; color:white;">Applied Patches</h3>
-          ${patches.length === 0 ? '<p style="color:#888;">No patches yet.</p>' : patches.map((p) => `
-            <div style="margin:8px 0; padding:8px; background:#3a3a3a; border-radius:4px;">
-              <label style="display:flex; align-items:center; gap:8px;">
-                <input type="checkbox" data-id="${p.id}" ${p.enabled ? "checked" : ""}>
-                <span title="${p.id}" style="color:white;">${p.title}</span>
-              </label>
-              <small style="color:#888; font-size:11px;">${new Date(p.createdAt).toLocaleString()}</small>
-            </div>
-          `).join("")}
-          <button id="hypo-close-patches" style="margin-top:10px; background:#555; color:white; border:none; padding:6px 12px; border-radius:3px;">Close</button>
-        </div>
-      `;
-        chat.appendChild(panelEl);
-        panelEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-          cb.addEventListener("change", () => {
-            const id = cb.dataset.id;
-            if (!id) return;
-            const currentPatches = this.storage.getPatches();
-            const updated = currentPatches.map(
-              (p) => p.id === id ? { ...p, enabled: cb.checked } : p
-            );
-            this.storage.savePatches(updated);
-            if (cb.checked) {
-              const patch = updated.find((p) => p.id === id);
-              PatchManager.applyToolCalls([patch.toolCall]);
+      settingsBtn.onclick = () => {
+        const configRaw = localStorage.getItem("hypoAssistantConfig");
+        let config = configRaw ? JSON.parse(configRaw) : {};
+        if (config.apiKey !== void 0 || config.apiEndpoint !== void 0 || config.model !== void 0) {
+          config = {
+            llm: {
+              apiKey: config.apiKey,
+              apiEndpoint: config.apiEndpoint,
+              model: config.model
             }
-          });
-        });
-        panelEl.querySelector("#hypo-close-patches").addEventListener("click", () => {
-          panelEl.remove();
-        });
-      };
-      reload.onclick = () => location.reload();
-      settings.onclick = () => {
-        const currentConfigRaw = localStorage.getItem("hypoAssistantConfig");
-        const currentConfig = currentConfigRaw ? JSON.parse(currentConfigRaw) : {};
-        const ep = prompt("API Endpoint:", currentConfig.apiEndpoint || "https://openrouter.ai/api/v1/chat/completions") || currentConfig.apiEndpoint;
-        const key = prompt("API Key:") || currentConfig.apiKey;
-        const model = prompt("Model:", currentConfig.model || "tngtech/deepseek-r1t2-chimera:free") || currentConfig.model;
+          };
+        }
+        const llm = config.llm || {};
+        const ep = prompt("API Endpoint:", llm.apiEndpoint || "https://openrouter.ai/api/v1/chat/completions") || llm.apiEndpoint;
+        const key = prompt("API Key:") || llm.apiKey;
+        const model = prompt("Model:", llm.model || "tngtech/deepseek-r1t2-chimera:free") || llm.model;
         const newConfig = {
-          ...currentConfig,
-          llm: {
-            ...currentConfig.llm,
-            apiEndpoint: ep,
-            apiKey: key,
-            model
-          }
+          llm: { apiEndpoint: ep, apiKey: key, model }
         };
         localStorage.setItem("hypoAssistantConfig", JSON.stringify(newConfig));
-        addMsg("\u2705 Config saved.", "assist");
-        if (key && key !== currentConfig.apiKey) {
+        addMessage("\u2705 Config saved.", "assist");
+        if (key && key !== llm.apiKey) {
           localStorage.removeItem("hypoAssistantSemanticIndex");
-          addMsg("\u{1F504} Semantic index will be rebuilt on next request.", "assist");
+          addMessage("\u{1F504} Semantic index will be rebuilt on next request.", "assist");
         }
       };
+      reloadBtn.onclick = () => location.reload();
+      addMessage("\u{1F99B} Ready. Describe your change.", "assist");
     }
   };
 
