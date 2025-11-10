@@ -7,7 +7,7 @@ import { LLMClient } from './llm/LLMClient.js';
 import { HypoAssistantEngine } from './core/Engine.js';
 import { HypoAssistantUI } from './ui/UI.js';
 import { PatchManager } from './core/PatchManager.js';
-import type { ToolCall } from './types.js';
+import type { StoredPatch } from './types.js';
 
 (async () => {
     'use strict';
@@ -24,23 +24,17 @@ import type { ToolCall } from './types.js';
     const llm = new LLMClient(config, storage);
     const engine = new HypoAssistantEngine(config, storage, llm);
 
-    // ТЕЗИС: Применение накопленных патчей при инициализации — изменения переживают перезагрузку.
+    // Применяем ТОЛЬКО включённые патчи при загрузке
     const savedPatches = storage.getPatches();
-    if (savedPatches.length > 0) {
-        const toolCalls: ToolCall[] = savedPatches.map(p => {
-            if ('tool' in p) {
-                return p;
-            } else {
-                // Обратная совместимость: старые текстовые патчи → applyTextPatch
-                return { tool: 'applyTextPatch', file: p.file, from: p.from, to: p.to };
-            }
-        });
-        PatchManager.applyToolCalls(toolCalls);
+    const enabledPatches = savedPatches.filter(p => p.enabled);
+    if (enabledPatches.length > 0) {
+        PatchManager.applyToolCalls(enabledPatches.map(p => p.toolCall));
     }
 
-    const ui = new HypoAssistantUI(async (query, signal) => {
-        return await engine.run(query, signal);
-    });
+    const ui = new HypoAssistantUI(
+        async (query, signal) => await engine.run(query, signal),
+        storage
+    );
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => ui.show());

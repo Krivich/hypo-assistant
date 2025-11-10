@@ -70,6 +70,7 @@ var HypoAssistant = (() => {
     saveSemanticIndex(index) {
       localStorage.setItem(SEMANTIC_INDEX_KEY, JSON.stringify(index));
     }
+    // Возвращаем StoredPatch[], а не старый Patch[]
     getPatches() {
       const raw = localStorage.getItem(PATCHES_KEY);
       return raw ? JSON.parse(raw) : [];
@@ -218,16 +219,17 @@ var HypoAssistant = (() => {
       signatureEnd: "<!--==/HTML_DOC==-->"
     };
     document.querySelectorAll('script:not([src]):not([id="hypo-assistant-core"])').forEach((el, i) => {
-      const id = `inline-script-${i}`;
       const content = el.textContent || "";
-      const hash = sha256(content);
-      sources[id] = {
-        type: "js",
-        content,
-        hash,
-        signatureStart: `/*==${id}==*/`,
-        signatureEnd: `/*==/${id}==*/`
-      };
+      sha256(content).then((hash) => {
+        const id = `inline-script-${i}`;
+        sources[id] = {
+          type: "js",
+          content,
+          hash,
+          signatureStart: `/*==${id}==*/`,
+          signatureEnd: `/*==/${id}==*/`
+        };
+      });
     });
     const scriptLinks = Array.from(document.querySelectorAll("script[src]"));
     for (let i = 0; i < scriptLinks.length; i++) {
@@ -249,28 +251,30 @@ var HypoAssistant = (() => {
       }
     }
     document.querySelectorAll("style").forEach((el, i) => {
-      const id = `inline-style-${i}`;
       const content = el.textContent || "";
-      const hash = sha256(content);
-      sources[id] = {
-        type: "css",
-        content,
-        hash,
-        signatureStart: `/*==${id}==*/`,
-        signatureEnd: `/*==/${id}==*/`
-      };
+      sha256(content).then((hash) => {
+        const id = `inline-style-${i}`;
+        sources[id] = {
+          type: "css",
+          content,
+          hash,
+          signatureStart: `/*==${id}==*/`,
+          signatureEnd: `/*==/${id}==*/`
+        };
+      });
     });
     document.querySelectorAll("template").forEach((el, i) => {
-      const id = `template-${i}`;
       const content = el.innerHTML;
-      const hash = sha256(content);
-      sources[id] = {
-        type: "html",
-        content,
-        hash,
-        signatureStart: `<!--==${id}==-->`,
-        signatureEnd: `<!--==/${id}==-->`
-      };
+      sha256(content).then((hash) => {
+        const id = `template-${i}`;
+        sources[id] = {
+          type: "html",
+          content,
+          hash,
+          signatureStart: `<!--==${id}==-->`,
+          signatureEnd: `<!--==/${id}==-->`
+        };
+      });
     });
     const links = Array.from(document.querySelectorAll('link[rel="stylesheet"][href]'));
     for (let i = 0; i < links.length; i++) {
@@ -291,18 +295,155 @@ var HypoAssistant = (() => {
         console.warn("Failed to fetch CSS:", link.href);
       }
     }
-    return sources;
+    const syncSources = {};
+    syncSources["HTML_DOC"] = {
+      type: "html",
+      content: htmlContent,
+      hash: htmlHash,
+      signatureStart: "<!--==HTML_DOC==-->",
+      signatureEnd: "<!--==/HTML_DOC==-->"
+    };
+    const inlineScripts = document.querySelectorAll('script:not([src]):not([id="hypo-assistant-core"])');
+    for (let i = 0; i < inlineScripts.length; i++) {
+      const el = inlineScripts[i];
+      const content = el.textContent || "";
+      const hash = await sha256(content);
+      const id = `inline-script-${i}`;
+      syncSources[id] = {
+        type: "js",
+        content,
+        hash,
+        signatureStart: `/*==${id}==*/`,
+        signatureEnd: `/*==/${id}==*/`
+      };
+    }
+    const inlineStyles = document.querySelectorAll("style");
+    for (let i = 0; i < inlineStyles.length; i++) {
+      const el = inlineStyles[i];
+      const content = el.textContent || "";
+      const hash = await sha256(content);
+      const id = `inline-style-${i}`;
+      syncSources[id] = {
+        type: "css",
+        content,
+        hash,
+        signatureStart: `/*==${id}==*/`,
+        signatureEnd: `/*==/${id}==*/`
+      };
+    }
+    const templates = document.querySelectorAll("template");
+    for (let i = 0; i < templates.length; i++) {
+      const el = templates[i];
+      const content = el.innerHTML;
+      const hash = await sha256(content);
+      const id = `template-${i}`;
+      syncSources[id] = {
+        type: "html",
+        content,
+        hash,
+        signatureStart: `<!--==${id}==-->`,
+        signatureEnd: `<!--==/${id}==-->`
+      };
+    }
+    return syncSources;
   }
 
   // src/core/SemanticIndexer.ts
+  var CORE_INSTRUCTIONS = `
+You are generating a single relevance record for a live code editing system.
+This record represents one file as a whole \u2014 do not split it into parts.
+The system uses these records to select files that contain elements the user might want to modify, replace, or update via code changes.
+Later, if selected, the entire file content will be provided to generate a precise patch.
+`;
+  var HTML_SPECIFIC = `
+Focus on:
+- Purpose: one sentence \u2014 what does this page do for the user?
+- Structure: key interactive or visual zones (e.g. 'theme switcher', 'floating chat panel').
+- Identifiers: CSS classes, IDs, DOM queries, event bindings that can be targeted.
+- If the HTML appears to be a skeleton (e.g. contains placeholders, lacks real text), explicitly note: "This is likely a server-rendered skeleton; real content may be hydrated from a data script."
+- Mention visible text only if it uniquely identifies a section (e.g. headline phrase, product name).
+Avoid generic layout terms like 'container', 'wrapper', or 'div'.
+`;
+  var JS_SPECIFIC = `
+Focus on:
+- Purpose: one sentence \u2014 what does this script do?
+- If it contains structured data (e.g. app state, UI hydration payload, or a JSON-like object with entities like posts, users, products), describe its semantic content (e.g. "list of blog posts") and note: "This block hydrates UI elements in the HTML document."
+- If it contains logic (functions, event listeners, DOM mutations), list: global variables, functions, DOM queries, event bindings.
+- Do not assume it is executable logic if it only exports or declares data.
+Avoid describing built-in APIs unless they define core behavior.
+`;
+  var CSS_SPECIFIC = `
+Focus on:
+- Purpose: one sentence \u2014 what does this stylesheet control?
+- Key entities: CSS variables (e.g. '--primary'), critical selectors (e.g. '.hero-title'), media queries, and language-specific rules.
+Avoid listing every minor rule; focus on what affects layout, theming, or interactivity.
+`;
+  var RESPONSE_FORMAT = `
+Return ONLY a JSON object with:
+{
+  "purpose": "Exactly one sentence.",
+  "key_entities": ["specific, actionable identifiers..."],
+  "dependencies": ["file IDs this file interacts with..."]
+}
+`;
+  var STRICT_RULES = `
+Rules:
+- Be concise, concrete, and focused on what can be changed or is unique.
+- Never summarize or generalize.
+- If the file is empty or trivial, set purpose to "Trivial or empty file".
+- Return ONLY valid JSON. No markdown, no explanation.
+`;
   function isFallbackIndex(entry) {
-    return entry.purpose === "One-sentence role" || entry.purpose === "Unindexed html file" || entry.key_entities.length === 0 || entry.key_entities.length === 3 && entry.key_entities.every((k) => ["functions", "classes", "CSS classes"].includes(k));
+    return entry?.purpose === "One-sentence role" || entry?.purpose === "Unindexed html file" || !Array.isArray(entry?.key_entities) || Array.isArray(entry?.key_entities) && entry.key_entities.length === 3 && entry.key_entities.every((k) => ["functions", "classes", "CSS classes"].includes(k));
   }
   var SemanticIndexer = class {
     constructor(config, storage, llm) {
       this.config = config;
       this.storage = storage;
       this.llm = llm;
+    }
+    // ТЕЗИС: Валидация и переиндексация выполняются только для реально изменившихся чанков.
+    // ТЕЗИС: Пользовательские патчи сохраняются, если LLM подтверждает их валидность.
+    async validateAndReindexChunk(fileId, currentMeta, oldIndexEntry, relevantPatches) {
+      let systemPromptContent = "";
+      if (currentMeta.type === "html") {
+        systemPromptContent = CORE_INSTRUCTIONS + HTML_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+      } else if (currentMeta.type === "js") {
+        systemPromptContent = CORE_INSTRUCTIONS + JS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+      } else if (currentMeta.type === "css") {
+        systemPromptContent = CORE_INSTRUCTIONS + CSS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+      } else {
+        systemPromptContent = CORE_INSTRUCTIONS + `
+Focus on the semantic meaning and structure of the content.
+` + RESPONSE_FORMAT + STRICT_RULES;
+      }
+      const validationPrompt = {
+        role: "system",
+        content: `The content of file "${fileId}" has changed.
+Old index entry:
+${JSON.stringify(oldIndexEntry, null, 2)}
+
+Active patches that depend on this file:
+${JSON.stringify(relevantPatches, null, 2)}
+
+Please:
+1. Generate a new index for this file (same format as before).
+2. For each patch, decide if it is still valid (can be applied to the new content).
+Return ONLY valid JSON:
+{
+  "newIndex": { "purpose": "...", "key_entities": [...], "dependencies": [...] },
+  "validatedPatches": [
+    { "id": "patch-id-1", "valid": true|false }
+  ]
+}`
+      };
+      const userPrompt = {
+        role: "user",
+        content: `[FILE: ${fileId}]
+${currentMeta.content}`
+      };
+      const response = await this.llm.call([validationPrompt, userPrompt], `validate_reindex:${fileId}`);
+      return response;
     }
     async ensureIndex() {
       let originals = this.storage.getOriginals();
@@ -316,35 +457,47 @@ var HypoAssistant = (() => {
       let needsSave = false;
       for (const [fileId, meta] of Object.entries(originals)) {
         const stored = semanticIndex[fileId];
-        if (!stored || stored.hash !== meta.hash || isFallbackIndex(stored)) {
+        const storedHash = typeof stored === "object" && stored !== null && "hash" in stored ? stored.hash : void 0;
+        if (!stored || storedHash !== meta.hash || isFallbackIndex(stored)) {
           try {
-            const systemPrompt = {
-              role: "system",
-              content: `You are a precise code analyst. Analyze the following ${meta.type} file and return ONLY a JSON object with:
-{
-  "purpose": "Exactly one sentence. What this file does in the app?",
-  "key_entities": [
-    "List every important CSS class (e.g. '.chat-messages', '.send-btn'), function name, variable, or event listener.",
-    "Do NOT use generic terms like 'CSS classes' or 'functions'. Be specific."
-  ],
-  "dependencies": [
-    "List file IDs (e.g. 'inline-script-3', 'linked-css-1') that this file likely interacts with.",
-    "If unsure, leave empty array."
-  ]
-}
-Rules:
-- Be exhaustive in key_entities.
-- Never summarize or generalize.
-- If the file is empty or trivial, set purpose to "Trivial or empty file".
-- Return ONLY valid JSON. No markdown, no explanation.`
-            };
-            const userPrompt = {
-              role: "user",
-              content: `[FILE: ${fileId}]
+            if (stored && storedHash !== meta.hash) {
+              const allPatches = this.storage.getPatches();
+              const relevantPatches = allPatches.filter((p) => p.dependsOn.includes(fileId));
+              const result = await this.validateAndReindexChunk(fileId, meta, stored, relevantPatches);
+              semanticIndex[fileId] = { ...result.newIndex, hash: meta.hash };
+              if (result.validatedPatches && result.validatedPatches.length > 0) {
+                const patchesMap = new Map(result.validatedPatches.map((v) => [v.id, v.valid]));
+                const updatedPatches = allPatches.map((p) => {
+                  if (patchesMap.has(p.id)) {
+                    return { ...p, enabled: patchesMap.get(p.id) === true && p.enabled };
+                  }
+                  return p;
+                });
+                this.storage.savePatches(updatedPatches);
+              }
+            } else {
+              let systemPromptContent = "";
+              if (meta.type === "html") {
+                systemPromptContent = CORE_INSTRUCTIONS + HTML_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+              } else if (meta.type === "js") {
+                systemPromptContent = CORE_INSTRUCTIONS + JS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+              } else if (meta.type === "css") {
+                systemPromptContent = CORE_INSTRUCTIONS + CSS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+              } else {
+                systemPromptContent = CORE_INSTRUCTIONS + `
+Focus on the semantic meaning and structure of the content.
+` + RESPONSE_FORMAT + STRICT_RULES;
+              }
+              const systemPrompt = { role: "system", content: systemPromptContent };
+              const userPrompt = {
+                role: "user",
+                content: `[FILE: ${fileId}]
 ${meta.content}`
-            };
-            const summary = await this.llm.call([systemPrompt, userPrompt], `indexing:${fileId}`);
-            semanticIndex[fileId] = { ...summary, hash: meta.hash };
+              };
+              const rawSummary = await this.llm.call([systemPrompt, userPrompt], `indexing:${fileId}`);
+              const summary = typeof rawSummary === "object" && rawSummary !== null ? rawSummary : {};
+              semanticIndex[fileId] = { ...summary, hash: meta.hash };
+            }
             needsSave = true;
           } catch (err) {
             console.warn(`Failed to index ${fileId}:`, err.message);
@@ -370,13 +523,25 @@ ${meta.content}`
     async run(userQuery, signal) {
       const { originals, index: semanticIndex } = await new SemanticIndexer(this.config, this.storage, this.llm).ensureIndex();
       console.group(`[HypoAssistant] \u{1F680} New request: "${userQuery}"`);
+      const activePatches = this.storage.getPatches().filter((p) => p.enabled);
+      const activePatchesSummary = activePatches.length > 0 ? activePatches.map((p) => `- ${p.title}`).join("\n") : "None";
       const relevancePrompt = {
         role: "system",
         content: `Project structure:
 ${JSON.stringify(semanticIndex, null, 2)}
+
+Currently active patches (already applied to the page):
+${activePatchesSummary}
+
+Note: Applied patches are user-controlled and may be disabled at any time. Do not assume their effects are permanent.
+
 Return {"relevant": ["file_id"]}`
       };
-      const relevanceRes = await this.llm.call([relevancePrompt, { role: "user", content: userQuery }], "relevance", signal);
+      const userRelevanceMsg = {
+        role: "user",
+        content: userQuery
+      };
+      const relevanceRes = await this.llm.call([relevancePrompt, userRelevanceMsg], "relevance", signal);
       const relevantIds = relevanceRes.relevant || ["HTML_DOC"];
       console.log("\u{1F4C1} Relevant files:", relevantIds);
       const contextBlocks = relevantIds.map((id) => {
@@ -387,95 +552,167 @@ ${src.content}
       }).filter(Boolean).join("\n\n");
       const patchPrompt = {
         role: "system",
-        content: `You are a precise frontend editor. Fulfill the user request by choosing **one** of the following tools:
+        content: `You are a precise frontend editor. Fulfill the user request by generating **one or more tools** in the correct order.
 
+Currently active patches (already applied to the page):
+${activePatchesSummary}
+
+Note: Applied patches are user-controlled and may be disabled at any time. Do not assume their effects are permanent.
+- AVOID duplicating changes already listed in "Currently active patches".
+
+Return a JSON object with:
 {
-  "tool": "setTextContent",
-  "selector": "CSS selector (must be unique and safe)",
-  "text": "new text content"
+  "groupTitle": "Short summary of the entire change (max 80 characters)",
+  "patches": [
+    {
+      "tool": "setTextContent",
+      "selector": "CSS selector that uniquely identifies the target element (e.g. 'h1.ru-only', '#main-title')",
+      "text": "The new text content to set (plain text, no HTML)",
+      "title": "Short, human-readable description of this change (max 60 characters, e.g. 'Add \u{1F99B} to heading')"
+    },
+    {
+      "tool": "setAttribute",
+      "selector": "CSS selector of the element",
+      "name": "name of the attribute to set (e.g. 'class', 'style', 'data-id')",
+      "value": "new attribute value",
+      "title": "Short description"
+    },
+    {
+      "tool": "insertAdjacentHTML",
+      "selector": "CSS selector of the target element",
+      "position": "one of: 'beforebegin', 'afterbegin', 'beforeend', 'afterend'",
+      "html": "Safe, minimal HTML string to insert",
+      "title": "Short description"
+    },
+    {
+      "tool": "addStyleRule",
+      "selector": "CSS selector to apply styles to (e.g. ':root', '.card')",
+      "style": "Valid CSS declaration block (e.g. 'background: pink; color: white')",
+      "title": "Short description"
+    },
+    {
+      "tool": "removeElement",
+      "selector": "CSS selector of the element to remove",
+      "title": "Short description"
+    },
+    {
+      "tool": "wrapElement",
+      "selector": "CSS selector of the element to wrap",
+      "wrapperTag": "HTML tag name for the wrapper (e.g. 'div', 'span')",
+      "wrapperClass": "optional CSS class for the wrapper",
+      "title": "Short description"
+    },
+    {
+      "tool": "applyTextPatch",
+      "file": "file_id (e.g. 'HTML_DOC', 'inline-script-0')",
+      "from": "exact substring present in the original file content",
+      "to": "replacement substring",
+      "title": "Short description"
+    }
+  ]
 }
 
-{
-  "tool": "setAttribute",
-  "selector": "CSS selector",
-  "name": "attribute name",
-  "value": "attribute value"
-}
-
-{
-  "tool": "insertAdjacentHTML",
-  "selector": "CSS selector of target element",
-  "position": "beforebegin | afterbegin | beforeend | afterend",
-  "html": "safe HTML string"
-}
-
-{
-  "tool": "addStyleRule",
-  "selector": "CSS selector",
-  "style": "CSS rules, e.g. 'color: red; font-weight: bold'"
-}
-
-{
-  "tool": "removeElement",
-  "selector": "CSS selector"
-}
-
-{
-  "tool": "wrapElement",
-  "selector": "CSS selector of element to wrap",
-  "wrapperTag": "HTML tag name, e.g. 'div'",
-  "wrapperClass": "optional CSS class for wrapper"
-}
-
-{
-  "tool": "applyTextPatch",
-  "file": "file_id (e.g. 'HTML_DOC')",
-  "from": "exact substring in original file content",
-  "to": "replacement substring"
-}
-
-Rules:
-- Prefer non-destructive, incremental DOM changes.
+Critical Rules:
+- \u2705 **NEVER use \`applyTextPatch\` for styles, text content, or standard HTML elements**.
+- \u2705 **For CSS changes \u2192 ALWAYS use \`addStyleRule\`**.
+- \u2705 **For text changes \u2192 ALWAYS use \`setTextContent\` or \`insertAdjacentHTML\`**.
+- \u2705 **For attribute changes \u2192 ALWAYS use \`setAttribute\`**.
+- \u26A0\uFE0F **Only use \`applyTextPatch\` as a last resort** when:
+    - the target is inside a \`<script>\` or \`<template>\` tag,
+    - and no DOM selector can be used to modify it incrementally.
+- \u{1F6AB} **Never use \`applyTextPatch\` on \`HTML_DOC\` unless it's the only way to fix broken markup that cannot be addressed via DOM APIs**.
+- Order matters: apply patches in the exact sequence provided.
+- Every patch must have a concise, meaningful "title" (max 60 characters).
+- "groupTitle" must be \u2264 80 characters and describe the whole intent.
 - NEVER generate JavaScript code or use eval.
-- Ensure selector uniquely identifies the target.
-- Return ONLY valid JSON. No markdown, no explanation.
-`
+- Return ONLY valid JSON. No markdown, no explanation.`
       };
-      const userMsg = { role: "user", content: `Context:
+      const userPatchMsg = {
+        role: "user",
+        content: `Context:
 ${contextBlocks}
 
-User request: ${userQuery}` };
-      const patchRes = await this.llm.call([patchPrompt, userMsg], "patch", signal);
-      let toolCall;
-      if (patchRes.tool === "setTextContent") {
-        toolCall = { tool: "setTextContent", selector: patchRes.selector, text: patchRes.text };
-      } else if (patchRes.tool === "setAttribute") {
-        toolCall = { tool: "setAttribute", selector: patchRes.selector, name: patchRes.name, value: patchRes.value };
-      } else if (patchRes.tool === "insertAdjacentHTML") {
-        toolCall = { tool: "insertAdjacentHTML", selector: patchRes.selector, position: patchRes.position, html: patchRes.html };
-      } else if (patchRes.tool === "addStyleRule") {
-        toolCall = { tool: "addStyleRule", selector: patchRes.selector, style: patchRes.style };
-      } else if (patchRes.tool === "removeElement") {
-        toolCall = { tool: "removeElement", selector: patchRes.selector };
-      } else if (patchRes.tool === "wrapElement") {
-        toolCall = { tool: "wrapElement", selector: patchRes.selector, wrapperTag: patchRes.wrapperTag, wrapperClass: patchRes.wrapperClass };
-      } else if (patchRes.tool === "applyTextPatch") {
-        toolCall = { tool: "applyTextPatch", file: patchRes.file, from: patchRes.from, to: patchRes.to };
-      } else {
-        throw new Error("Invalid tool response from LLM");
+User request: ${userQuery}`
+      };
+      const patchRes = await this.llm.call([patchPrompt, userPatchMsg], "patch", signal);
+      let groupTitle = "Untitled change";
+      if (typeof patchRes.groupTitle === "string") {
+        groupTitle = patchRes.groupTitle.substring(0, 80);
       }
-      console.log("\u{1F3C6} Final tool call:", toolCall);
+      const rawPatches = Array.isArray(patchRes.patches) ? patchRes.patches : [patchRes];
+      const storedPatches = [];
+      for (const p of rawPatches) {
+        if (!p.tool || !p.title) continue;
+        let toolCall = null;
+        let title = p.title.substring(0, 60);
+        switch (p.tool) {
+          case "setTextContent":
+            if (p.selector && p.text !== void 0) {
+              toolCall = { tool: "setTextContent", selector: p.selector, text: p.text };
+            }
+            break;
+          case "setAttribute":
+            if (p.selector && p.name && p.value !== void 0) {
+              toolCall = { tool: "setAttribute", selector: p.selector, name: p.name, value: p.value };
+            }
+            break;
+          case "insertAdjacentHTML":
+            if (p.selector && p.position && p.html !== void 0) {
+              const pos = p.position;
+              if (["beforebegin", "afterbegin", "beforeend", "afterend"].includes(pos)) {
+                toolCall = { tool: "insertAdjacentHTML", selector: p.selector, position: pos, html: p.html };
+              }
+            }
+            break;
+          case "addStyleRule":
+            if (p.selector && p.style !== void 0) {
+              toolCall = { tool: "addStyleRule", selector: p.selector, style: p.style };
+            }
+            break;
+          case "removeElement":
+            if (p.selector) {
+              toolCall = { tool: "removeElement", selector: p.selector };
+            }
+            break;
+          case "wrapElement":
+            if (p.selector && p.wrapperTag) {
+              toolCall = { tool: "wrapElement", selector: p.selector, wrapperTag: p.wrapperTag, wrapperClass: p.wrapperClass };
+            }
+            break;
+          case "applyTextPatch":
+            if (p.file && p.from && p.to) {
+              toolCall = { tool: "applyTextPatch", file: p.file, from: p.from, to: p.to };
+            }
+            break;
+        }
+        if (toolCall) {
+          storedPatches.push({
+            id: crypto.randomUUID(),
+            toolCall,
+            dependsOn: relevantIds,
+            enabled: false,
+            createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+            title
+          });
+        }
+      }
+      if (storedPatches.length === 0) {
+        throw new Error("No valid patches generated");
+      }
+      console.log("\u{1F3C6} Generated group:", { groupTitle, patches: storedPatches });
       const diagnostics = this.storage.getDiagnostics();
       diagnostics.runs.push({
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         phase: "final_tool_call",
-        data: toolCall
+        data: { groupTitle, patches: storedPatches }
+        // ✅ исправлено: объект соответствует Diagnostics
       });
       this.storage.saveDiagnostics(diagnostics);
       console.groupEnd();
       return {
-        message: "Patch generated via tool-based LLM request.",
-        patches: [toolCall]
+        message: groupTitle,
+        patches: storedPatches,
+        groupTitle
       };
     }
   };
@@ -530,7 +767,6 @@ User request: ${userQuery}` };
         }
       }
     }
-    // ТЕЗИС: applyTextPatch — внутренний fallback, не экспонируется напрямую.
     static applyTextPatch(sources, patch) {
       const patched = deepClone(sources);
       const file = patched[patch.file];
@@ -546,8 +782,9 @@ User request: ${userQuery}` };
 
   // src/ui/UI.ts
   var HypoAssistantUI = class {
-    constructor(onUserRequest) {
+    constructor(onUserRequest, storage) {
       this.onUserRequest = onUserRequest;
+      this.storage = storage;
     }
     panel = null;
     abortController = null;
@@ -570,8 +807,6 @@ User request: ${userQuery}` };
       z-index: 10000;
       box-shadow: 0 4px 12px rgba(0,0,0,0.2);
       font-size: 24px;
-      line-height: 1;
-      font-family: sans-serif;
     ">\u{1F99B}</div>
 
     <!-- Full panel (hidden by default) -->
@@ -610,7 +845,8 @@ User request: ${userQuery}` };
         <button id="hypo-send" style="background: #007acc; color: white; border: none; padding: 8px 12px; margin-left: 8px; border-radius: 3px; cursor: pointer;">Send</button>
       </div>
       <div style="padding: 10px; display: flex; gap: 6px;">
-        <button id="hypo-export" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">Export HTML</button>
+        <button id="hypo-export" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F4E4} Export</button>
+        <button id="hypo-patch-manager" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F9E9} Patches</button>
         <button id="hypo-settings" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u2699\uFE0F Settings</button>
         <button id="hypo-reload" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">\u{1F504} Reload</button>
       </div>
@@ -626,6 +862,13 @@ User request: ${userQuery}` };
       const toggleBtn = document.getElementById("hypo-toggle");
       const panel = document.getElementById("hypo-panel");
       const collapseBtn = document.getElementById("hypo-collapse");
+      const chat = document.getElementById("hypo-chat");
+      const input = document.getElementById("hypo-input-field");
+      const send = document.getElementById("hypo-send");
+      const exportBtn = document.getElementById("hypo-export");
+      const patchManagerBtn = document.getElementById("hypo-patch-manager");
+      const settings = document.getElementById("hypo-settings");
+      const reload = document.getElementById("hypo-reload");
       toggleBtn.onclick = () => {
         toggleBtn.style.display = "none";
         panel.style.display = "flex";
@@ -634,12 +877,6 @@ User request: ${userQuery}` };
         panel.style.display = "none";
         toggleBtn.style.display = "flex";
       };
-      const chat = document.getElementById("hypo-chat");
-      const input = document.getElementById("hypo-input-field");
-      const send = document.getElementById("hypo-send");
-      const exportBtn = document.getElementById("hypo-export");
-      const settings = document.getElementById("hypo-settings");
-      const reload = document.getElementById("hypo-reload");
       const addMsg = (text, cls) => {
         const el = document.createElement("div");
         el.className = `msg ${cls}`;
@@ -665,10 +902,12 @@ User request: ${userQuery}` };
           const res = await this.onUserRequest(query, this.abortController.signal);
           addMsg(res.message, "assist");
           if (confirm("Apply patch?")) {
-            const patches = JSON.parse(localStorage.getItem("hypoAssistantPatches") || "[]");
-            localStorage.setItem("hypoAssistantPatches", JSON.stringify([...patches, ...res.patches]));
-            PatchManager.applyToolCalls(res.patches);
-            addMsg("\u2705 Applied.", "assist");
+            const existingPatches = this.storage.getPatches();
+            const allPatches = [...existingPatches, ...res.patches];
+            const toolCalls = res.patches.map((p) => p.toolCall);
+            PatchManager.applyToolCalls(toolCalls);
+            this.storage.savePatches(allPatches);
+            addMsg('\u2705 Applied. Enable in "\u{1F9E9} Patches" to persist.', "assist");
           }
         } catch (err) {
           if (err.name !== "AbortError") {
@@ -677,36 +916,75 @@ User request: ${userQuery}` };
         }
       };
       exportBtn.onclick = () => {
-        const blob = new Blob([document.documentElement.outerHTML], { type: "text/html" });
+        const tempDoc = document.cloneNode(true);
+        const hypoScript = tempDoc.querySelector('script[src="./HypoAssistant.js"]');
+        if (hypoScript) hypoScript.remove();
+        tempDoc.querySelectorAll("script:not([src]):not([id])").forEach((script) => {
+          if (script.textContent?.includes("hashLang")) script.remove();
+        });
+        const coreEl = tempDoc.getElementById("hypo-assistant-core");
+        if (coreEl) coreEl.remove();
+        const html = `<!DOCTYPE html>
+${tempDoc.documentElement.outerHTML}`;
+        const blob = new Blob([html], { type: "text/html" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "hypo-patched-app.html";
+        a.download = "patched-page.html";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       };
+      patchManagerBtn.onclick = () => {
+        const patches = this.storage.getPatches();
+        const panelEl = document.createElement("div");
+        panelEl.innerHTML = `
+        <div style="background:#2d2d2d; padding:10px; max-height:60vh; overflow:auto;">
+          <h3 style="margin:0 0 10px; color:white;">Applied Patches</h3>
+          ${patches.length === 0 ? '<p style="color:#888;">No patches yet.</p>' : patches.map((p) => `
+            <div style="margin:8px 0; padding:8px; background:#3a3a3a; border-radius:4px;">
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" data-id="${p.id}" ${p.enabled ? "checked" : ""}>
+                <span title="${p.id}" style="color:white;">${p.title}</span>
+              </label>
+              <small style="color:#888; font-size:11px;">${new Date(p.createdAt).toLocaleString()}</small>
+            </div>
+          `).join("")}
+          <button id="hypo-close-patches" style="margin-top:10px; background:#555; color:white; border:none; padding:6px 12px; border-radius:3px;">Close</button>
+        </div>
+      `;
+        chat.appendChild(panelEl);
+        panelEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+          cb.addEventListener("change", () => {
+            const id = cb.dataset.id;
+            if (!id) return;
+            const currentPatches = this.storage.getPatches();
+            const updated = currentPatches.map(
+              (p) => p.id === id ? { ...p, enabled: cb.checked } : p
+            );
+            this.storage.savePatches(updated);
+            if (cb.checked) {
+              const patch = updated.find((p) => p.id === id);
+              PatchManager.applyToolCalls([patch.toolCall]);
+            }
+          });
+        });
+        panelEl.querySelector("#hypo-close-patches").addEventListener("click", () => {
+          panelEl.remove();
+        });
+      };
       reload.onclick = () => location.reload();
       settings.onclick = () => {
         const currentConfigRaw = localStorage.getItem("hypoAssistantConfig");
         const currentConfig = currentConfigRaw ? JSON.parse(currentConfigRaw) : {};
-        const currentLlm = currentConfig.llm || {};
-        const ep = prompt("API Endpoint:", currentLlm.apiEndpoint || "https://openrouter.ai/api/v1/chat/completions") || currentLlm.apiEndpoint;
-        const key = prompt("API Key:") || currentLlm.apiKey;
-        const model = prompt("Model:", currentLlm.model || "qwen/qwen3-coder:free") || currentLlm.model;
-        const newConfig = {
-          ...currentConfig,
-          llm: {
-            ...currentLlm,
-            apiEndpoint: ep,
-            apiKey: key,
-            model
-          }
-        };
+        const ep = prompt("API Endpoint:", currentConfig.apiEndpoint || "https://openrouter.ai/api/v1/chat/completions") || currentConfig.apiEndpoint;
+        const key = prompt("API Key:") || currentConfig.apiKey;
+        const model = prompt("Model:", currentConfig.model || "qwen/qwen3-coder:free") || currentConfig.model;
+        const newConfig = { ...currentConfig, apiEndpoint: ep, apiKey: key, model };
         localStorage.setItem("hypoAssistantConfig", JSON.stringify(newConfig));
         addMsg("\u2705 Config saved.", "assist");
-        if (key && key !== currentLlm.apiKey) {
+        if (key && key !== currentConfig.apiKey) {
           localStorage.removeItem("hypoAssistantSemanticIndex");
           addMsg("\u{1F504} Semantic index will be rebuilt on next request.", "assist");
         }
@@ -727,19 +1005,14 @@ User request: ${userQuery}` };
     const llm = new LLMClient(config, storage);
     const engine = new HypoAssistantEngine(config, storage, llm);
     const savedPatches = storage.getPatches();
-    if (savedPatches.length > 0) {
-      const toolCalls = savedPatches.map((p) => {
-        if ("tool" in p) {
-          return p;
-        } else {
-          return { tool: "applyTextPatch", file: p.file, from: p.from, to: p.to };
-        }
-      });
-      PatchManager.applyToolCalls(toolCalls);
+    const enabledPatches = savedPatches.filter((p) => p.enabled);
+    if (enabledPatches.length > 0) {
+      PatchManager.applyToolCalls(enabledPatches.map((p) => p.toolCall));
     }
-    const ui = new HypoAssistantUI(async (query, signal) => {
-      return await engine.run(query, signal);
-    });
+    const ui = new HypoAssistantUI(
+      async (query, signal) => await engine.run(query, signal),
+      storage
+    );
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", () => ui.show());
     } else {

@@ -43,7 +43,6 @@ export class PatchManager {
                     }
                 }
                 else if (call.tool === 'applyTextPatch') {
-                    // Fallback: only for cases where DOM tools are insufficient
                     const originalsRaw = localStorage.getItem('hypoAssistantOriginals');
                     if (!originalsRaw) continue;
                     const originals = JSON.parse(originalsRaw);
@@ -61,7 +60,6 @@ export class PatchManager {
         }
     }
 
-    // ТЕЗИС: applyTextPatch — внутренний fallback, не экспонируется напрямую.
     private static applyTextPatch(sources: Sources, patch: { file: string; from: string; to: string }): Sources {
         const patched = deepClone(sources);
         const file = patched[patch.file];

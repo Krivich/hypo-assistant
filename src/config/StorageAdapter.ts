@@ -1,7 +1,7 @@
 // ТЕЗИС: Хранилище — это адаптер, а не глобальное состояние. Оно не знает логики, только ключи и структуру.
 // ТЕЗИС: Все операции с localStorage изолированы в одном месте — это упрощает миграцию на IndexedDB.
 
-import type { Sources, Patch } from '../types';
+import type { Sources, StoredPatch } from '../types';
 
 const CONFIG_KEY = 'hypoAssistantConfig';
 const ORIGINALS_KEY = 'hypoAssistantOriginals';
@@ -11,59 +11,60 @@ const DIAGNOSTICS_KEY = 'hypoAssistantDiagnostics';
 const LLM_USAGE_KEY = 'hypoAssistantLLMUsage';
 
 export interface Diagnostics {
-  runs: Array<{ timestamp: string; phase: string; data: unknown }>;
+    runs: Array<{ timestamp: string; phase: string; data: unknown }>;
 }
 
 export interface LLMUsageStats {
-  [modelKey: string]: {
-    daily: Record<string, { prompt: number; completion: number; requests: number }>;
-    total: { prompt: number; completion: number; requests: number };
-  };
+    [modelKey: string]: {
+        daily: Record<string, { prompt: number; completion: number; requests: number }>;
+        total: { prompt: number; completion: number; requests: number };
+    };
 }
 
 export class StorageAdapter {
-  getOriginals(): Sources | null {
-    const raw = localStorage.getItem(ORIGINALS_KEY);
-    return raw ? JSON.parse(raw) : null;
-  }
+    getOriginals(): Sources | null {
+        const raw = localStorage.getItem(ORIGINALS_KEY);
+        return raw ? JSON.parse(raw) : null;
+    }
 
-  saveOriginals(sources: Sources): void {
-    localStorage.setItem(ORIGINALS_KEY, JSON.stringify(sources));
-  }
+    saveOriginals(sources: Sources): void {
+        localStorage.setItem(ORIGINALS_KEY, JSON.stringify(sources));
+    }
 
-  getSemanticIndex(): Record<string, unknown> | null {
-    const raw = localStorage.getItem(SEMANTIC_INDEX_KEY);
-    return raw ? JSON.parse(raw) : null;
-  }
+    getSemanticIndex(): Record<string, unknown> | null {
+        const raw = localStorage.getItem(SEMANTIC_INDEX_KEY);
+        return raw ? JSON.parse(raw) : null;
+    }
 
-  saveSemanticIndex(index: Record<string, unknown>): void {
-    localStorage.setItem(SEMANTIC_INDEX_KEY, JSON.stringify(index));
-  }
+    saveSemanticIndex(index: Record<string, unknown>): void {
+        localStorage.setItem(SEMANTIC_INDEX_KEY, JSON.stringify(index));
+    }
 
-  getPatches(): Patch[] {
-    const raw = localStorage.getItem(PATCHES_KEY);
-    return raw ? JSON.parse(raw) : [];
-  }
+    // Возвращаем StoredPatch[], а не старый Patch[]
+    getPatches(): StoredPatch[] {
+        const raw = localStorage.getItem(PATCHES_KEY);
+        return raw ? JSON.parse(raw) : [];
+    }
 
-  savePatches(patches: Patch[]): void {
-    localStorage.setItem(PATCHES_KEY, JSON.stringify(patches));
-  }
+    savePatches(patches: StoredPatch[]): void {
+        localStorage.setItem(PATCHES_KEY, JSON.stringify(patches));
+    }
 
-  getDiagnostics(): Diagnostics {
-    const raw = localStorage.getItem(DIAGNOSTICS_KEY);
-    return raw ? JSON.parse(raw) : { runs: [] };
-  }
+    getDiagnostics(): Diagnostics {
+        const raw = localStorage.getItem(DIAGNOSTICS_KEY);
+        return raw ? JSON.parse(raw) : { runs: [] };
+    }
 
-  saveDiagnostics(diagnostics: Diagnostics): void {
-    localStorage.setItem(DIAGNOSTICS_KEY, JSON.stringify(diagnostics, null, 2));
-  }
+    saveDiagnostics(diagnostics: Diagnostics): void {
+        localStorage.setItem(DIAGNOSTICS_KEY, JSON.stringify(diagnostics, null, 2));
+    }
 
-  getLLMUsage(): LLMUsageStats {
-    const raw = localStorage.getItem(LLM_USAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  }
+    getLLMUsage(): LLMUsageStats {
+        const raw = localStorage.getItem(LLM_USAGE_KEY);
+        return raw ? JSON.parse(raw) : {};
+    }
 
-  saveLLMUsage(stats: LLMUsageStats): void {
-    localStorage.setItem(LLM_USAGE_KEY, JSON.stringify(stats, null, 2));
-  }
+    saveLLMUsage(stats: LLMUsageStats): void {
+        localStorage.setItem(LLM_USAGE_KEY, JSON.stringify(stats, null, 2));
+    }
 }

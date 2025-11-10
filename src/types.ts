@@ -31,9 +31,28 @@ export type ToolCall =
     | { tool: 'addStyleRule'; selector: string; style: string }
     | { tool: 'removeElement'; selector: string }
     | { tool: 'wrapElement'; selector: string; wrapperTag: string; wrapperClass?: string }
-    | { tool: 'applyTextPatch'; file: string; from: string; to: string }; // fallback
+    | { tool: 'applyTextPatch'; file: string; from: string; to: string };
+
+// ТЕЗИС: Патч — атомарное, обратимое изменение с уникальным ID и заголовком.
+export interface StoredPatch {
+    id: string;
+    toolCall: ToolCall;
+    dependsOn: string[];
+    enabled: boolean;
+    createdAt: string;
+    title: string; // ≤ 60 символов
+}
+
+// Группа патчей: один пользовательский запрос
+export interface PatchGroup {
+    requestId: string;     // UUID группы
+    userQuery: string;    // исходный запрос
+    groupTitle: string;   // общий заголовок группы (≤ 80 символов)
+    patches: StoredPatch[];
+}
 
 export interface PatchResult {
     message: string;
-    patches: ToolCall[];
+    patches: StoredPatch[];
+    groupTitle: string; // для UI
 }
