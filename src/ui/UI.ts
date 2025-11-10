@@ -227,8 +227,16 @@ export class HypoAssistantUI {
             const currentConfig = currentConfigRaw ? JSON.parse(currentConfigRaw) : {};
             const ep = prompt('API Endpoint:', currentConfig.apiEndpoint || 'https://openrouter.ai/api/v1/chat/completions') || currentConfig.apiEndpoint;
             const key = prompt('API Key:') || currentConfig.apiKey;
-            const model = prompt('Model:', currentConfig.model || 'qwen/qwen3-coder:free') || currentConfig.model;
-            const newConfig = { ...currentConfig, apiEndpoint: ep, apiKey: key, model };
+            const model = prompt('Model:', currentConfig.model || 'tngtech/deepseek-r1t2-chimera:free') || currentConfig.model;
+            const newConfig = {
+                ...currentConfig,
+                llm: {
+                    ...currentConfig.llm,
+                    apiEndpoint: ep,
+                    apiKey: key,
+                    model: model
+                }
+            };
             localStorage.setItem('hypoAssistantConfig', JSON.stringify(newConfig));
             addMsg('✅ Config saved.', 'assist');
             if (key && key !== currentConfig.apiKey) {
