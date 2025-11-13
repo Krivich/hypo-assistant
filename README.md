@@ -1,6 +1,6 @@
 # 🦛 HypoAssistant — Live Site Editing, Right in Your Browser
 
-> **Don’t wait for developers to fix what bothers you. Make it better — for yourself, right now.**
+> **Don’t wait for developers to fix what bothers you. Make it better — for yourself, right now.**  
 > HypoAssistant is a local assistant that helps you modify any website **without access to source code**, without builds, and without reloads (when possible).
 
 Perfect if you:
@@ -14,16 +14,16 @@ Perfect if you:
 
 ## 💡 How It Works
 
-1. **Analysis**
+1. **Analysis**  
    HypoAssistant reads the current page: HTML, styles, scripts — everything available in the DOM and linked resources.
 
-2. **Request**
+2. **Request**  
    You describe what you’d like to change: _“Make the submit button green”_, _“Add highlight for important notifications”_.
 
-3. **Patch**
+3. **Patch**  
    Using the full context, it generates a **minimal, reversible patch** — not a rewrite, but a surgical edit.
 
-4. **Apply**
+4. **Apply**  
    You see exactly what will change and decide whether to apply it. Everything happens **locally, in your browser**.
 
 ---
@@ -41,16 +41,26 @@ Perfect if you:
 
 ---
 
-## 🧰 Flexibility and Control
+## 🧰 Core Capabilities
 
-- **Your choice of model**: free tier for quick experiments, premium models for critical tasks.
-- **Transparent data flow**:
-  We **have no server**, so your data never reaches us.
-  However, if you use a cloud-based LLM, **the entire indexed code of the page** (HTML, JS, CSS) may be sent to the model provider.
-  **Do not use HypoAssistant on pages with confidential information** unless you trust the provider.
-  For full privacy, use local models.
-- **Export your work**: save patches or export the full HTML for later use.
-- **Easy to embed**: just add a `<script>` tag — no dependencies, no build step.
+- **Zero-install, zero-server**: works directly from GitHub Pages.
+- **RAG-powered context**: indexes HTML, inline/external JS, CSS, and `<template>` content.
+- **Surgical DOM edits**: uses safe, reversible operations (`setTextContent`, `addStyleRule`, etc.).
+- **Text-level fallback**: for script/template edits, applies semantic-aware text patches.
+- **Patch management**: save, disable, or reapply changes via the built-in patch manager.
+- **LLM-agnostic**: works with any OpenRouter-compatible model (or local LLM endpoint).
+- **Offline-ready**: once loaded, no internet required for UI or patch application.
+
+---
+
+## 🔒 Privacy & Transparency
+
+- **No server**: all logic runs in your browser.
+- **No telemetry**: no analytics, no tracking, no external data collection.
+- **Full visibility**: raw LLM requests and responses are logged to the console.
+- **Token safety**: your API key never leaves your browser.
+
+> ⚠️ When using a cloud-based LLM, the **full indexed page (HTML/JS/CSS)** is sent to the model provider. Do not use on confidential pages unless you trust the provider.
 
 ---
 
@@ -58,7 +68,10 @@ Perfect if you:
 
 - **Developers** who want to quickly prototype ideas on live sites.
 - **Users** tired of inconvenient interfaces and ready to improve them.
-- **Researchers** exploring local RAG and live editing capabilities.
+- **Researchers** exploring:
+    - **local RAG** (retrieval-augmented generation),
+    - **dynamic tool calling** (structured DOM mutation instructions),
+    - **adaptive chunking** with automatic handling of LLM context limits.
 
 ---
 
@@ -69,6 +82,8 @@ Perfect if you:
 - **Push-based orchestration**: updates flow in, no polling
 - **Configurable by default**: flexibility without complexity
 - **Strict TypeScript**: type-safe from the ground up
+- **Safe tool calling**: all changes via declarative, idempotent operations
+- **Automatic adaptive chunking**: system self-adjusts when context exceeds model limits
 
 ---
 
@@ -78,5 +93,5 @@ MIT — free to use, study, and improve.
 
 ---
 
-> **HypoAssistant isn’t a replacement for development — it’s a way to extend its reach into real-time, live-site experimentation.**
+> **HypoAssistant isn’t a replacement for development — it’s a way to extend its reach into real-time, live-site experimentation.**  
 > Built for those who believe: if you want something improved, the best way is often to do it yourself.

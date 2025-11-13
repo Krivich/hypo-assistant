@@ -14,7 +14,8 @@
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": false,
     "rootDir": "./src",
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "useDefineForClassFields": true,
   },
   "include": ["src/**/*"]
 }

@@ -19,85 +19,263 @@ export class HypoAssistantUI {
 
     private getTemplate(): string {
         return `
-<!-- Floating toggle button -->
-<div id="hypo-toggle" style="
+<style>
+  #hypo-assistant-core {
+    /* --- Кастомизация через CSS vars --- */
+    --ha-space-xs: 4px;
+    --ha-space-s: 8px;
+    --ha-space-m: 12px;
+    --ha-space-l: 16px;
+    --ha-space-xl: 20px;
+
+    --ha-radius-s: 8px;
+    --ha-radius-m: 12px;
+    --ha-radius-l: 16px;
+    --ha-radius-full: 50%;
+
+    --ha-btn-size: 40px;
+    --ha-panel-width: 360px;
+
+    /* Цвета — светлая тема по умолчанию */
+    --ha-bg: #ffffff;
+    --ha-surface: #ffffff;
+    --ha-text: #111111;
+    --ha-text-secondary: #666666;
+    --ha-border: #e0e0e0;
+    --ha-brand: #6c63ff;
+    --ha-user-bg: #e6e6ff;
+    --ha-coach-bg: #f0f0f0;
+    --ha-shadow: 0 6px 16px rgba(0,0,0,0.08);
+    --ha-shadow-toggle: 0 4px 12px rgba(0,0,0,0.12);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    #hypo-assistant-core {
+      --ha-bg: #121212;
+      --ha-surface: #1e1e1e;
+      --ha-text: #e0e0e0;
+      --ha-text-secondary: #a0a0a0;
+      --ha-border: #333333;
+      --ha-user-bg: #2a273f;
+      --ha-coach-bg: #2d2d2d;
+    }
+  }
+
+  #hypo-assistant-core *,
+  #hypo-assistant-core *::before,
+  #hypo-assistant-core *::after {
+    box-sizing: border-box;
+  }
+</style>
+
+<!-- Toggle button -->
+<button id="hypo-toggle" aria-label="Open HypoAssistant" style="
   position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 56px;
-  height: 56px;
-  background: #6c63ff;
+  bottom: var(--ha-space-l);
+  right: var(--ha-space-l);
+  width: var(--ha-btn-size);
+  height: var(--ha-btn-size);
+  background: var(--ha-brand);
   color: white;
-  border-radius: 50%;
+  border-radius: var(--ha-radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 10000;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-  font-size: 24px;
-">🦛</div>
+  box-shadow: var(--ha-shadow-toggle);
+  border: none;
+  padding: 0;
+  font: inherit;
+">🦛</button>
 
 <!-- Main panel -->
 <div id="hypo-panel" style="
   display: none;
   position: fixed;
-  right: 0;
   top: 0;
-  width: 100vw;
-  height: 100dvh;
-  min-height: 100dvh;
-  max-width: 360px;
-  background: #1e1e1e;
-  color: #e0e0e0;
-  font-family: monospace;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: var(--ha-panel-width);
+  background: var(--ha-bg);
+  color: var(--ha-text);
+  font-family: 'Inter', system-ui, sans-serif;
   z-index: 10000;
-  box-shadow: -2px 0 10px rgba(0,0,0,0.5);
   flex-direction: column;
+  box-shadow: -2px 0 12px rgba(0,0,0,0.08);
+  overflow: hidden;
 ">
-  <div style="padding: 10px; background: #2d2d2d; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
-    <div style="font-weight: bold;">🦛 HypoAssistant v1.1</div>
-    <button id="hypo-collapse" style="
-      background: #555;
-      color: white;
+  <div style="padding: var(--ha-space-m); background: var(--ha-surface); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ha-border);">
+    <div style="font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: var(--ha-space-xs);">
+      🦛 <span>HypoAssistant v1.1</span>
+    </div>
+    <button id="hypo-collapse" aria-label="Collapse panel" style="
+      background: none;
+      color: var(--ha-text-secondary);
       border: none;
       width: 24px;
       height: 24px;
-      border-radius: 50%;
+      border-radius: var(--ha-radius-full);
       cursor: pointer;
-      font-size: 14px;
-    ">✕</button>
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      font: inherit;
+    ">
+      <!-- collapse icon (chevron left) -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
   </div>
+
   <div id="hypo-chat" style="
     flex: 1;
     overflow-y: auto;
-    padding: 10px;
-    font-size: 13px;
-    min-height: 0;
+    padding: var(--ha-space-l);
+    font-size: 14px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-m);
   "></div>
-  <div style="display: flex; padding: 10px; background: #252526; flex-shrink: 0;">
-    <input type="text" placeholder="Describe change..." id="hypo-input-field" style="flex: 1; background: #333; color: white; border: none; padding: 8px; border-radius: 3px;">
-    <button id="hypo-send" style="background: #007acc; color: white; border: none; padding: 8px 12px; margin-left: 8px; border-radius: 3px; cursor: pointer;">Send</button>
+
+  <div style="padding: var(--ha-space-m) var(--ha-space-l) var(--ha-space-l); background: var(--ha-surface);">
+    <div style="display: flex; gap: var(--ha-space-s);">
+      <input type="text" placeholder="Describe change..." id="hypo-input-field" style="
+        flex: 1;
+        background: var(--ha-surface);
+        color: var(--ha-text);
+        border: 1px solid var(--ha-border);
+        border-radius: var(--ha-radius-m);
+        padding: var(--ha-space-s) var(--ha-space-m);
+        font-family: inherit;
+        font-size: 14px;
+      ">
+      <button id="hypo-send" aria-label="Send" style="
+        width: var(--ha-btn-size);
+        height: var(--ha-btn-size);
+        background: var(--ha-brand);
+        color: white;
+        border: none;
+        border-radius: var(--ha-radius-full);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      ">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
   </div>
-  <div style="padding: 10px; display: flex; gap: 6px; flex-shrink: 0;">
-    <button id="hypo-export" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">📤 Export</button>
-    <button id="hypo-patch-manager" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">🧩 Patches</button>
-    <button id="hypo-settings" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">⚙️ Settings</button>
-    <button id="hypo-reload" style="flex: 1; padding: 6px; background: #3a3a3a; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">🔄 Reload</button>
+
+  <div style="padding: 0 var(--ha-space-l) var(--ha-space-l); display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--ha-space-s);">
+    <button id="hypo-export" style="
+      padding: var(--ha-space-s);
+      background: var(--ha-surface);
+      border: 1px solid var(--ha-border);
+      border-radius: var(--ha-radius-m);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--ha-space-xs);
+      font-size: 12px;
+      color: var(--ha-text);
+    ">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Export
+    </button>
+    <button id="hypo-patch-manager" style="
+      padding: var(--ha-space-s);
+      background: var(--ha-surface);
+      border: 1px solid var(--ha-border);
+      border-radius: var(--ha-radius-m);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--ha-space-xs);
+      font-size: 12px;
+      color: var(--ha-text);
+    ">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="8" y1="6" x2="21" y2="6"></line>
+        <line x1="8" y1="12" x2="21" y2="12"></line>
+        <line x1="8" y1="18" x2="21" y2="18"></line>
+        <line x1="3" y1="6" x2="3" y2="6"></line>
+        <line x1="3" y1="12" x2="3" y2="12"></line>
+        <line x1="3" y1="18" x2="3" y2="18"></line>
+      </svg>
+      Patches
+    </button>
+    <button id="hypo-settings" style="
+      padding: var(--ha-space-s);
+      background: var(--ha-surface);
+      border: 1px solid var(--ha-border);
+      border-radius: var(--ha-radius-m);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--ha-space-xs);
+      font-size: 12px;
+      color: var(--ha-text);
+    ">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51-1.65 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1.65 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </button>
+    <button id="hypo-reload" style="
+      padding: var(--ha-space-s);
+      background: var(--ha-surface);
+      border: 1px solid var(--ha-border);
+      border-radius: var(--ha-radius-m);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--ha-space-xs);
+      font-size: 12px;
+      color: var(--ha-text);
+    ">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <polyline points="1 20 1 14 7 14"></polyline>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>
+      Reload
+    </button>
   </div>
 </div>
 
-<!-- Hidden template for patch items -->
+<!-- Template for patch items -->
 <template id="hypo-patch-item-template">
-  <div style="margin:8px 0; padding:8px; background:#3a3a3a; border-radius:4px;">
-    <label style="display:flex; align-items:center; gap:8px;">
-      <input type="checkbox">
-      <span style="color:white;"></span>
+  <div style="padding: var(--ha-space-m); background: var(--ha-surface); border-radius: var(--ha-radius-m); border: 1px solid var(--ha-border);">
+    <label style="display: flex; align-items: center; gap: var(--ha-space-s);">
+      <input type="checkbox" style="width: 16px; height: 16px;">
+      <span style="color: var(--ha-text); font-weight: 500;"></span>
     </label>
-    <small style="color:#888; font-size:11px;"></small>
+    <small style="color: var(--ha-text-secondary); font-size: 11px; margin-top: var(--ha-space-xs); display: block;"></small>
   </div>
 </template>
-        `;
+`;
     }
 
     public show(): void {
