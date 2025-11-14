@@ -1,0 +1,279 @@
+#hypo-assistant-core {
+    /* --- Кастомизация через CSS vars --- */
+    --ha-space-xs: 4px;
+    --ha-space-s: 8px;
+    --ha-space-m: 12px;
+    --ha-space-l: 16px;
+    --ha-space-xl: 20px;
+
+    --ha-radius-s: 8px;
+    --ha-radius-m: 12px;
+    --ha-radius-l: 16px;
+    --ha-radius-full: 50%;
+
+    --ha-btn-size: 40px;
+    --ha-panel-width: 360px;
+
+    /* Цвета — светлая тема по умолчанию */
+    --ha-bg: #ffffff;
+    --ha-surface: #ffffff;
+    --ha-text: #111111;
+    --ha-text-secondary: #666666;
+    --ha-border: #e0e0e0;
+    --ha-brand: #6c63ff;
+    --ha-user-bg: #e6e6ff;
+    --ha-coach-bg: #f0f0f0;
+    --ha-shadow: 0 6px 16px rgba(0,0,0,0.08);
+    --ha-shadow-toggle: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+    #hypo-assistant-core {
+        --ha-bg: #121212;
+        --ha-surface: #1e1e1e;
+        --ha-text: #e0e0e0;
+        --ha-text-secondary: #a0a0a0;
+        --ha-border: #333333;
+        --ha-user-bg: #2a273f;
+        --ha-coach-bg: #2d2d2d;
+    }
+}
+
+#hypo-assistant-core *,
+#hypo-assistant-core *::before,
+#hypo-assistant-core *::after {
+    box-sizing: border-box;
+}
+
+/* Toggle button (floating) */
+#hypo-assistant-core #hypo-toggle {
+    position: fixed;
+    bottom: var(--ha-space-l);
+    right: var(--ha-space-l);
+    width: var(--ha-btn-size);
+    height: var(--ha-btn-size);
+    background: var(--ha-brand);
+    color: white;
+    border-radius: var(--ha-radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10000;
+    box-shadow: var(--ha-shadow-toggle);
+    border: none;
+    padding: 0;
+    font: inherit;
+}
+
+/* Main panel */
+#hypo-assistant-core #hypo-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: var(--ha-panel-width);
+    background: var(--ha-bg);
+    color: var(--ha-text);
+    font-family: 'Inter', system-ui, sans-serif;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -2px 0 12px rgba(0,0,0,0.08);
+    overflow: hidden;
+}
+
+/* Header */
+#hypo-assistant-core .hypo-header {
+    padding: var(--ha-space-m);
+    background: var(--ha-surface);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--ha-border);
+}
+
+#hypo-assistant-core .hypo-title {
+    font-weight: 600;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-xs);
+}
+
+#hypo-assistant-core #hypo-collapse {
+    background: none;
+    color: var(--ha-text-secondary);
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--ha-radius-full);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font: inherit;
+}
+
+/* Chat */
+#hypo-assistant-core #hypo-chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--ha-space-l);
+    font-size: 14px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-m);
+}
+
+/* Input area */
+#hypo-assistant-core .hypo-input-area {
+    padding: var(--ha-space-m) var(--ha-space-l) var(--ha-space-l);
+    background: var(--ha-surface);
+    display: flex;
+    gap: var(--ha-space-s);
+}
+
+#hypo-assistant-core #hypo-input-field {
+    flex: 1;
+    background: var(--ha-surface);
+    color: var(--ha-text);
+    border: 1px solid var(--ha-border);
+    border-radius: var(--ha-radius-m);
+    padding: var(--ha-space-s) var(--ha-space-m);
+    font-family: inherit;
+    font-size: 14px;
+}
+
+#hypo-assistant-core #hypo-send {
+    width: var(--ha-btn-size);
+    height: var(--ha-btn-size);
+    background: var(--ha-brand);
+    color: white;
+    border: none;
+    border-radius: var(--ha-radius-full);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+/* Action buttons grid */
+#hypo-assistant-core .hypo-actions-grid {
+    padding: 0 var(--ha-space-l) var(--ha-space-l);
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--ha-space-s);
+}
+
+#hypo-assistant-core .hypo-actions-grid button {
+    padding: var(--ha-space-s);
+    background: var(--ha-surface);
+    border: 1px solid var(--ha-border);
+    border-radius: var(--ha-radius-m);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ha-space-xs);
+    font-size: 12px;
+    color: var(--ha-text);
+}
+
+/* Patch item (from template) */
+#hypo-assistant-core .hypo-patch-item {
+    padding: var(--ha-space-m);
+    background: var(--ha-surface);
+    border-radius: var(--ha-radius-m);
+    border: 1px solid var(--ha-border);
+}
+
+#hypo-assistant-core .hypo-patch-item label {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-s);
+}
+
+#hypo-assistant-core .hypo-patch-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}
+
+#hypo-assistant-core .hypo-patch-item span {
+    color: var(--ha-text);
+    font-weight: 500;
+}
+
+#hypo-assistant-core .hypo-patch-item small {
+    color: var(--ha-text-secondary);
+    font-size: 11px;
+    margin-top: var(--ha-space-xs);
+    display: block;
+}
+
+/* Progress tree (used dynamically) */
+.progress-tree {
+    background: var(--ha-coach-bg);
+    border-radius: var(--ha-radius-m);
+    padding: var(--ha-space-s) var(--ha-space-m); /* как у сообщений */
+    font-family: monospace;
+    font-size: 14px;
+    line-height: 1.4;
+    margin: var(--ha-space-s) 0; /* небольшой вертикальный отступ */
+}
+
+.progress-line {
+    display: flex;
+    align-items: baseline;
+}
+
+.progress-line .tree-skeleton {
+    opacity: 0.7;
+    user-select: none;
+    white-space: pre;
+    min-width: 24px;
+}
+
+.progress-line .action-text {
+    margin-right: 8px;
+}
+
+.progress-line .action-timer {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--ha-text-secondary);
+    min-width: 48px;
+    text-align: right;
+}
+
+.progress-line .action-timer.completed {
+    color: var(--ha-brand);
+}
+
+.progress-header {
+    padding: var(--ha-space-s) var(--ha-space-m);
+    font-weight: 600;
+    color: var(--ha-text);
+    /*border-bottom: 1px solid var(--ha-border);*/
+    margin: 0 calc(-1 * var(--ha-space-l));
+}
+
+/* Chat messages */
+#hypo-assistant-core .msg.user {
+    background: var(--ha-user-bg);
+    padding: var(--ha-space-s) var(--ha-space-m);
+    border-radius: var(--ha-radius-s);
+    align-self: flex-end;
+}
+
+#hypo-assistant-core .msg.assist {
+    background: var(--ha-coach-bg);
+    padding: var(--ha-space-s) var(--ha-space-m);
+    border-radius: var(--ha-radius-s);
+    align-self: flex-start;
+}

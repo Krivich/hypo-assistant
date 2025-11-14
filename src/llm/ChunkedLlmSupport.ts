@@ -2,6 +2,8 @@
 // ТЕЗИС: Чанкер работает итеративно: при переполнении уменьшает размер чанка и повторяет попытку, не создавая рекурсивных чанкеров.
 import type { Message } from '../types';
 import type { LLMClient } from './LLMClient';
+import { AdaptiveProgressObserver } from '../utils/AdaptiveProgressObserver.js';
+import {AppConfig} from "../config/AppConfig";
 
 export class ChunkedLlmSupport {
     // === Детектирует переполнение в любом формате ===
@@ -46,7 +48,6 @@ export class ChunkedLlmSupport {
         return null;
     }
 
-    // === Запуск чанкинга ===
     static async handleChunkedInference(
         originalSystemPrompt: string,
         originalUserPrompt: string,
@@ -54,6 +55,8 @@ export class ChunkedLlmSupport {
         usedTokens: number,
         context: string,
         llmClient: LLMClient,
+        config: AppConfig,
+        progress?: AdaptiveProgressObserver,
         signal?: AbortSignal
     ): Promise<unknown> {
         const inputLength = new Blob([JSON.stringify([
@@ -62,8 +65,8 @@ export class ChunkedLlmSupport {
         ])]).size;
         const charsPerToken = inputLength / usedTokens;
         const safetyMargin = 0.85;
-        const maxCompletionTokens = 2048; // ← ДОЛЖНО СОВПАДАТЬ С LLMClient
-        const maxPromptTokens = Math.floor(maxTokens * safetyMargin - maxCompletionTokens); // ← ВЫЧИТАЕМ completion
+        const maxCompletionTokens = 2048;
+        const maxPromptTokens = Math.floor(maxTokens * safetyMargin - maxCompletionTokens);
         const minChunkChars = 500;
         const overlapRatio = 0.1;
 
@@ -76,10 +79,19 @@ export class ChunkedLlmSupport {
         const estimatedChunkChars = Math.max(minChunkChars, Math.floor(estimatedAvailableTokens * charsPerToken));
         const estimatedTotalChunks = Math.ceil(originalUserPrompt.length / estimatedChunkChars);
 
+        // === Определяем базовый префикс для статуса ===
+        const baseAction = context.split(':')[0]; // например, "indexing" или "relevance"
+
+        // Первое обновление: начало обработки
+        let chunkFlow = progress?.startFlow({
+            steps: estimatedTotalChunks + 1,
+            stepTimeMs: config.get(60000, 'llm.timeouts.generationMs')
+        });
+
         let remainingText = originalUserPrompt;
         const intermediateResults: string[] = [];
         let chunkIndex = 1;
-        const maxAttemptsPerChunk = 6; // ← УВЕЛИЧЕНО с 3 до 6
+        const maxAttemptsPerChunk = 6;
 
         while (remainingText.length > 0) {
             // === ТЕЗИС: Вычисляем параметры чанка ОДИН РАЗ, чтобы избежать сброса размера между попытками ===
@@ -94,14 +106,16 @@ export class ChunkedLlmSupport {
                 { role: 'user', content: userPromptTemplate }
             ])]).size;
             const overheadTokens = Math.ceil(overheadSize / charsPerToken);
+
             if (overheadTokens >= maxPromptTokens) {
                 throw new Error(`Prompt overhead (${overheadTokens}) exceeds limit (${maxPromptTokens}) — cannot fit any content.`);
             }
+
             const availableTokens = maxPromptTokens - overheadTokens;
             const availableChars = Math.floor(availableTokens * charsPerToken);
             let chunkSize = Math.max(minChunkChars, availableChars);
-
             let attempts = 0;
+
             while (attempts < maxAttemptsPerChunk) {
                 const actualChunk = remainingText.substring(0, chunkSize);
                 const fullUserPrompt = `[CHUNK ${chunkIndex}]\n${actualChunk}`;
@@ -109,19 +123,24 @@ export class ChunkedLlmSupport {
                     { role: 'system', content: systemPromptBase },
                     { role: 'user', content: fullUserPrompt }
                 ];
-                const contextWithEstimate = `${context}:chunk:${chunkIndex}of~${estimatedTotalChunks}`;
 
+                const contextWithEstimate = `${context}:chunk:${chunkIndex}of~${estimatedTotalChunks}`;
                 try {
+                    chunkFlow?.startStep(`Chunk ${chunkIndex} of ~${estimatedTotalChunks}`);
+
                     const result = await llmClient.call(
                         messages,
                         contextWithEstimate,
                         signal,
-                        (err) => ChunkedLlmSupport.isContextOverflowError(err) !== null
+                        (err) => ChunkedLlmSupport.isContextOverflowError(err) !== null,
+                        chunkFlow
                     );
+
                     intermediateResults.push(typeof result === 'string' ? result : JSON.stringify(result));
                     const overlapChars = Math.floor(chunkSize * overlapRatio);
                     remainingText = remainingText.substring(chunkSize - overlapChars);
                     chunkIndex++;
+
                     break;
                 } catch (err) {
                     const overflow = ChunkedLlmSupport.isContextOverflowError(err);
@@ -137,13 +156,23 @@ export class ChunkedLlmSupport {
         }
 
         // Финальная агрегация
+        chunkFlow?.startStep("Final aggregation...");
+
         const finalSystemPrompt = this.buildFinalSystemPrompt(originalSystemPrompt, intermediateResults);
         const finalMessages: Message[] = [
             { role: 'system', content: finalSystemPrompt },
             { role: 'user', content: '[BEGIN AGGREGATED RESULTS]' }
         ];
-        return await llmClient.call(finalMessages, `${context}:final_aggregation`, signal);
+
+        return await llmClient.call(
+            finalMessages,
+            `${context}:final_aggregation`,
+            signal,
+            undefined,
+            chunkFlow
+        );
     }
+    // === Запуск чанкинга ===
 
     // === Вспомогательные методы (БЕЗ ИЗМЕНЕНИЙ) ===
     private static buildChunkedSystemPrompt(

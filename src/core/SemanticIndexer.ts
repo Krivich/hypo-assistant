@@ -7,6 +7,7 @@ import { AppConfig } from '../config/AppConfig';
 import { StorageAdapter } from '../config/StorageAdapter';
 import { LLMClient } from '../llm/LLMClient';
 import { collectOriginalSources } from './SourceCollector';
+import { AdaptiveProgressObserver } from '../utils/AdaptiveProgressObserver.js';
 
 // === КИРПИЧИ ПРОМПТОВ ===
 
@@ -84,29 +85,33 @@ export class SemanticIndexer {
 
     // ТЕЗИС: Валидация и переиндексация выполняются только для реально изменившихся чанков.
     // ТЕЗИС: Пользовательские патчи сохраняются, если LLM подтверждает их валидность.
+
     private async validateAndReindexChunk(
         fileId: string,
         currentMeta: { type: string; content: string; hash: string },
         oldIndexEntry: any,
-        relevantPatches: StoredPatch[]
+        relevantPatches: StoredPatch[],
+        progress: AdaptiveProgressObserver,
+        signal?: AbortSignal
     ): Promise<{ newIndex: any; validatedPatches: { id: string; valid: boolean }[] }> {
-        let systemPromptContent = '';
-
+        // Формируем ТОЛЬКО специфичные инструкции для типа файла
+        let fileSpecificInstructions = '';
         if (currentMeta.type === 'html') {
-            systemPromptContent = CORE_INSTRUCTIONS + HTML_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+            fileSpecificInstructions = HTML_SPECIFIC;
         } else if (currentMeta.type === 'js') {
-            systemPromptContent = CORE_INSTRUCTIONS + JS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+            fileSpecificInstructions = JS_SPECIFIC;
         } else if (currentMeta.type === 'css') {
-            systemPromptContent = CORE_INSTRUCTIONS + CSS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
+            fileSpecificInstructions = CSS_SPECIFIC;
         } else {
-            systemPromptContent = CORE_INSTRUCTIONS + `
+            fileSpecificInstructions = `
 Focus on the semantic meaning and structure of the content.
-` + RESPONSE_FORMAT + STRICT_RULES;
+`;
         }
 
+        // Теперь включаем специфичные инструкции внутрь основного validationPrompt
         const validationPrompt: Message = {
             role: 'system',
-            content: `The content of file "${fileId}" has changed.
+            content: `${CORE_INSTRUCTIONS} ${fileSpecificInstructions} ${RESPONSE_FORMAT} ${STRICT_RULES} The content of file "${fileId}" has changed.
 Old index entry:
 ${JSON.stringify(oldIndexEntry, null, 2)}
 
@@ -114,7 +119,7 @@ Active patches that depend on this file:
 ${JSON.stringify(relevantPatches, null, 2)}
 
 Please:
-1. Generate a new index for this file (same format as before).
+1. Generate a new index for this file (same format as before, adhering to the instructions above for ${currentMeta.type} files).
 2. For each patch, decide if it is still valid (can be applied to the new content).
 Return ONLY valid JSON:
 {
@@ -130,14 +135,19 @@ Return ONLY valid JSON:
             content: `[FILE: ${fileId}]\n${currentMeta.content}`
         };
 
-        const response = await this.llm.call([validationPrompt, userPrompt], `validate_reindex:${fileId}`);
+        const response = await this.llm.call(
+            [validationPrompt, userPrompt],
+            `validate_reindex:${fileId}`,
+            signal,
+            undefined,
+            progress
+        );
         return response as any;
     }
 
-    async ensureIndex(): Promise<{ originals: Sources; index: Record<string, any> }> {
+    async ensureIndex(progress: AdaptiveProgressObserver, signal?: AbortSignal): Promise<{ originals: Sources; index: Record<string, any> }> {
         let originals = this.storage.getOriginals();
         let semanticIndex = this.storage.getSemanticIndex();
-
         if (!originals) {
             originals = await collectOriginalSources();
             this.storage.saveOriginals(originals);
@@ -145,39 +155,40 @@ Return ONLY valid JSON:
         }
         if (!semanticIndex) semanticIndex = {};
 
-        let needsSave = false;
+        const fileIds = Object.keys(originals);
 
-        for (const [fileId, meta] of Object.entries(originals)) {
+        const indexerFlow = progress.startFlow({steps: fileIds.length});
+
+        let needsSave = false;
+        for (let idx = 0; idx < fileIds.length; idx++) {
+            const fileId = fileIds[idx];
+            const meta = originals[fileId];
             const stored = semanticIndex[fileId];
             const storedHash = typeof stored === 'object' && stored !== null && 'hash' in stored
                 ? stored.hash
                 : undefined;
 
+            indexerFlow.startStep(`File ${fileId}`);
             if (!stored || storedHash !== meta.hash || isFallbackIndex(stored)) {
                 try {
                     if (stored && storedHash !== meta.hash) {
-                        // Чанк изменился — валидируем патчи и переиндексируем
                         const allPatches = this.storage.getPatches();
                         const relevantPatches = allPatches.filter(p => p.dependsOn.includes(fileId));
-
-                        const result = await this.validateAndReindexChunk(fileId, meta, stored, relevantPatches);
-
-                        // Обновляем индекс
+                        const result = await this.validateAndReindexChunk(
+                            fileId, meta, stored, relevantPatches,
+                            indexerFlow,
+                            signal
+                        );
                         semanticIndex[fileId] = { ...result.newIndex, hash: meta.hash };
-
-                        // Обновляем патчи: отключаем невалидные
-                        if (result.validatedPatches && result.validatedPatches.length > 0) {
+                        if (result.validatedPatches?.length) {
                             const patchesMap = new Map(result.validatedPatches.map(v => [v.id, v.valid]));
-                            const updatedPatches = allPatches.map(p => {
-                                if (patchesMap.has(p.id)) {
-                                    return { ...p, enabled: patchesMap.get(p.id) === true && p.enabled };
-                                }
-                                return p;
-                            });
+                            const updatedPatches = allPatches.map(p => patchesMap.has(p.id)
+                                ? { ...p, enabled: patchesMap.get(p.id) === true && p.enabled }
+                                : p
+                            );
                             this.storage.savePatches(updatedPatches);
                         }
                     } else {
-                        // Новый чанк или фолбэк — индексируем как обычно
                         let systemPromptContent = '';
                         if (meta.type === 'html') {
                             systemPromptContent = CORE_INSTRUCTIONS + HTML_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
@@ -190,18 +201,21 @@ Return ONLY valid JSON:
 Focus on the semantic meaning and structure of the content.
 ` + RESPONSE_FORMAT + STRICT_RULES;
                         }
-
                         const systemPrompt: Message = { role: 'system', content: systemPromptContent };
                         const userPrompt: Message = {
                             role: 'user',
                             content: `[FILE: ${fileId}]\n${meta.content}`
                         };
-
-                        const rawSummary = await this.llm.call([systemPrompt, userPrompt], `indexing:${fileId}`);
+                        const rawSummary = await this.llm.call(
+                            [systemPrompt, userPrompt],
+                            `indexing:${fileId}`,
+                            signal,
+                            undefined,
+                            indexerFlow
+                        );
                         const summary = typeof rawSummary === 'object' && rawSummary !== null ? rawSummary : {};
                         semanticIndex[fileId] = { ...summary, hash: meta.hash };
                     }
-
                     needsSave = true;
                 } catch (err) {
                     console.warn(`Failed to index ${fileId}:`, (err as Error).message);
@@ -214,7 +228,6 @@ Focus on the semantic meaning and structure of the content.
         if (needsSave) {
             this.storage.saveSemanticIndex(semanticIndex);
         }
-
         return { originals, index: semanticIndex };
     }
 }

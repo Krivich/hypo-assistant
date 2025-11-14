@@ -5,6 +5,7 @@ import type { Message } from '../types';
 import { AppConfig } from '../config/AppConfig';
 import { StorageAdapter } from '../config/StorageAdapter';
 import { ChunkedLlmSupport } from './ChunkedLlmSupport';
+import { AdaptiveProgressObserver } from '../utils/AdaptiveProgressObserver.js';
 
 export class LLMClient {
     constructor(private config: AppConfig, private storage: StorageAdapter) {}
@@ -49,8 +50,10 @@ export class LLMClient {
         messages: Message[],
         context: string,
         signal?: AbortSignal,
-        isNonRetryableError?: (error: unknown) => boolean
+        isNonRetryableError?: (error: unknown) => boolean,
+        progress?: AdaptiveProgressObserver
     ): Promise<unknown> {
+
         const apiEndpoint = this.config.get<string>('https://openrouter.ai/api/v1/chat/completions', 'llm.apiEndpoint');
         const apiKey = this.config.get('', 'llm.apiKey');
         const model = this.config.get('tngtech/deepseek-r1t2-chimera:free', 'llm.model');
@@ -66,8 +69,11 @@ export class LLMClient {
         } catch (e) {}
 
         let lastError: Error | null = null;
-
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            if (attempt > 0) {
+                progress?.updateEstimate(timeoutMs);
+            }
+
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             const combinedSignal = signal
@@ -86,7 +92,6 @@ export class LLMClient {
 
                 // === ТЕЗИС: Ограничиваем длину ответа, чтобы избежать переполнения из-за completion tokens ===
                 const maxTokensResponse = 2048;
-
                 const response = await fetch(urlToUse, {
                     method: 'POST',
                     headers,
@@ -94,7 +99,7 @@ export class LLMClient {
                         model,
                         messages,
                         temperature: 0.1,
-                        max_tokens: maxTokensResponse, // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
+                        max_tokens: maxTokensResponse,
                         response_format: { type: 'json_object' }
                     }),
                     signal: combinedSignal
@@ -102,7 +107,6 @@ export class LLMClient {
 
                 clearTimeout(timeoutId);
                 const data = await response.json();
-
                 if (data.error) {
                     if (isNonRetryableError?.(data)) {
                         throw data;
@@ -121,14 +125,16 @@ export class LLMClient {
                                 overflow.usedTokens,
                                 context,
                                 this,
+                                this.config,
+                                progress,
                                 signal
                             );
                         }
                     }
-
                     throw new Error(`LLM Error: ${data.error.message}`);
                 }
 
+                progress?.updateEstimate(0);
                 if (data.usage) {
                     this.logAndReportTokens(
                         data.usage,
@@ -139,12 +145,10 @@ export class LLMClient {
                         context
                     );
                 }
-
                 const content = data.choices?.[0]?.message?.content;
                 if (!content) throw new Error('Empty LLM response');
                 const clean = content.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
                 return JSON.parse(clean);
-
             } catch (err) {
                 clearTimeout(timeoutId);
 
@@ -165,21 +169,20 @@ export class LLMClient {
                             overflow.usedTokens,
                             context,
                             this,
+                            this.config,
+                            progress,
                             signal
                         );
                     }
                 }
-
                 lastError = err as Error;
                 if (attempt < maxRetries && !signal?.aborted) {
                     await new Promise(r => setTimeout(r, retryDelayBaseMs * Math.pow(2, attempt)));
                     continue;
                 }
-
                 break;
             }
         }
-
         throw lastError!;
     }
 }

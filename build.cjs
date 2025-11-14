@@ -7,6 +7,10 @@ const isWatch = process.argv.includes('--watch');
 
 // Единая конфигурация — одна точка правды
 const buildOptions = {
+    loader: {
+        ".html": "text",
+        ".css": "text"
+    },
     entryPoints: ['src/main.ts'],
     bundle: true,
     outfile: 'dist/HypoAssistant.js',

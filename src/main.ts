@@ -1,6 +1,4 @@
-// ТЕЗИС: main.ts — единственный модуль с глобальной оркестрацией. Все зависимости передаются явно.
-// ТЕЗИС: Библиотека инициализируется автоматически при подключении скрипта.
-
+// src/main.ts
 import { AppConfig } from './config/AppConfig.js';
 import { StorageAdapter } from './config/StorageAdapter.js';
 import { LLMClient } from './llm/LLMClient.js';
@@ -32,7 +30,7 @@ import type { StoredPatch } from './types.js';
     }
 
     const ui = new HypoAssistantUI(
-        async (query, signal) => await engine.run(query, signal),
+        async (query, progress, signal) => await engine.run(query, progress, signal),
         storage
     );
 

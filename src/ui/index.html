@@ -1,0 +1,104 @@
+<!-- 🦛 Вся UI-библиотека — обёрнута для изоляции стилей -->
+<div id="hypo-assistant-core">
+
+    <!-- 🔘 ToggleButton.ts — плавающая кнопка открытия -->
+    <button id="hypo-toggle" aria-label="Open HypoAssistant">🦛</button>
+
+    <!-- 🖥️ HypoAssistantUI.ts (оркестратор) — управляет отображением/скрытием панели -->
+    <div id="hypo-panel" style="display: none;">
+
+        <!-- 💬 ChatPanel.ts — контейнер для всех сообщений (user/assist), прогресса и списка патчей -->
+        <div class="hypo-header">
+            <div class="hypo-title">🦛 <span>HypoAssistant v1.1</span></div>
+            <!-- 🔘 ToggleButton.ts (вторая роль) — кнопка сворачивания панели -->
+            <button id="hypo-collapse" aria-label="Collapse panel">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+        </div>
+
+        <!-- 💬 ChatPanel.ts — основное содержимое чата -->
+        <div id="hypo-chat"></div>
+
+        <!-- ✍️ ChatPanel.ts — но обрабатывается в HypoAssistantUI через sendBtn.onclick -->
+        <div class="hypo-input-area">
+            <input type="text" id="hypo-input-field" placeholder="Describe change..." />
+            <button id="hypo-send" aria-label="Send">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+            </button>
+            <template id="hypo-cancel-icon-template">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </template>
+        </div>
+
+        <!-- 🛠️ HypoAssistantUI.ts — глобальные действия -->
+        <div class="hypo-actions-grid">
+            <button id="hypo-export">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Export
+            </button>
+            <button id="hypo-patch-manager">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(45 12 12)" />
+                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(-45 12 12)" />
+                </svg>
+                Patches
+            </button>
+            <button id="hypo-settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51-1.65 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1.65 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                Settings
+            </button>
+            <button id="hypo-reload">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                Reload
+            </button>
+        </div>
+
+    </div> <!-- /#hypo-panel -->
+
+
+    <!-- 📦 PatchListView.ts — шаблон для отображения одного патча -->
+    <template id="hypo-patch-item-template">
+        <div class="hypo-patch-item">
+            <label>
+                <input type="checkbox" />
+                <span></span>
+            </label>
+            <small></small>
+        </div>
+    </template>
+
+    <!-- 🌳 ProgressTree.ts — шаблон одной строки прогресса -->
+    <template id="hypo-progress-line-template">
+        <div class="progress-line">
+            <span class="tree-skeleton"></span>
+            <span class="action-text"></span>
+            <span class="action-timer"></span>
+        </div>
+    </template>
+
+    <template id="hypo-progress-header-template">
+        <div class="progress-header">
+            <strong></strong>
+        </div>
+    </template>
+
+</div>
