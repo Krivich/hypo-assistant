@@ -259,35 +259,53 @@
     padding: var(--ha-space-s) var(--ha-space-m);
     font-weight: 600;
     color: var(--ha-text);
-    /*border-bottom: 1px solid var(--ha-border);*/
-    margin: 0 calc(-1 * var(--ha-space-l));
 }
 
-/* Chat messages */
+/* === Единая карточка сообщения === */
+#hypo-assistant-core .msg {
+    padding: var(--ha-space-s) var(--ha-space-m);
+    border-radius: var(--ha-radius-m);
+    max-width: 100%;
+    word-break: break-word;
+}
+
+/* Пользователь: квадратный ПРАВЫЙ нижний угол */
 #hypo-assistant-core .msg.user {
     background: var(--ha-user-bg);
-    padding: var(--ha-space-s) var(--ha-space-m);
-    border-radius: var(--ha-radius-s);
     align-self: flex-end;
+    border-bottom-right-radius: 0;
 }
 
+/* Ассистент: квадратный ЛЕВЫЙ нижний угол */
 #hypo-assistant-core .msg.assist {
     background: var(--ha-coach-bg);
-    padding: var(--ha-space-s) var(--ha-space-m);
-    border-radius: var(--ha-radius-s);
     align-self: flex-start;
+    border-bottom-left-radius: 0;
 }
 
-/* Виджет патчей как сообщение */
-.hypo-patch-widget {
-    width: 100%;
+/* === Специализированные виджеты (наследуют от .msg.assist) === */
+
+/* Дерево прогресса */
+#hypo-assistant-core .progress-tree {
+    background: var(--ha-coach-bg);
     padding: var(--ha-space-s) var(--ha-space-m);
-    background: var(--ha-surface);
+    font-family: monospace;
+    font-size: 14px;
+    line-height: 1.4;
     border-radius: var(--ha-radius-m);
-    border: 1px solid var(--ha-border);
-    font-size: 13px;
+    border-bottom-left-radius: 0; /* как у ассистента */
 }
 
+/* Виджет патчей — теперь наследует общий стиль */
+#hypo-assistant-core .hypo-patch-widget {
+    background: var(--ha-coach-bg);
+    padding: var(--ha-space-s) var(--ha-space-m);
+    font-size: 13px;
+    border-radius: var(--ha-radius-m);
+    border-bottom-left-radius: 0; /* как у ассистента */
+}
+
+/* Внутренности виджета патчей */
 .hypo-patch-header {
     font-weight: 600;
     margin-bottom: var(--ha-space-s);
@@ -303,6 +321,36 @@
     gap: var(--ha-space-s);
 }
 
+.hypo-patch-item {
+    padding: var(--ha-space-m);
+    background: var(--ha-surface);
+    border-radius: var(--ha-radius-s);
+    border: 1px solid var(--ha-border);
+}
+
+.hypo-patch-item label {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-s);
+}
+
+.hypo-patch-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}
+
+.hypo-patch-item span {
+    color: var(--ha-text);
+    font-weight: 500;
+}
+
+.hypo-patch-item small {
+    color: var(--ha-text-secondary);
+    font-size: 11px;
+    margin-top: var(--ha-space-xs);
+    display: block;
+}
+
 .hypo-patch-save-btn {
     margin-top: var(--ha-space-m);
     padding: var(--ha-space-xs) var(--ha-space-s);
@@ -316,4 +364,48 @@
 
 .hypo-patch-save-btn:hover {
     opacity: 0.9;
+}
+
+/* Пустой список патчей */
+.hypo-patch-empty {
+    color: var(--ha-text-secondary);
+    font-size: 13px;
+    margin-top: 8px;
+}
+
+/* === Прогресс-дерево: строки === */
+.progress-line {
+    display: flex;
+    align-items: baseline;
+}
+
+.progress-line .tree-skeleton {
+    opacity: 0.7;
+    user-select: none;
+    white-space: pre;
+    min-width: 24px;
+}
+
+.progress-line .action-text {
+    margin-right: 8px;
+}
+
+.progress-line .action-timer {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--ha-text-secondary);
+    min-width: 48px;
+    text-align: right;
+}
+
+.progress-line .action-timer.completed {
+    color: var(--ha-brand);
+}
+
+/* === Заголовок внутри дерева прогресса (если используется) === */
+.progress-header {
+    padding: var(--ha-space-xs) 0 var(--ha-space-s) 0;
+    font-weight: 600;
+    color: var(--ha-text);
+    font-size: 14px;
 }
