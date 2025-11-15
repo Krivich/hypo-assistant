@@ -120,8 +120,14 @@ export class HypoAssistantUI {
         const patchList = new PatchListView(
             this.chatPanel,
             patchItemTpl,
+            document.getElementById('hypo-patch-widget-template') as HTMLTemplateElement, // ← новый шаблон
             this.storage,
-            showMainChat
+            () => {
+                this.chatPanel.addMessage(
+                    '✅ Patch settings saved. Changes will persist after reload.',
+                    'assist'
+                );
+            }
         );
 
         document.getElementById('hypo-patch-manager')!.onclick = () => {
@@ -162,6 +168,9 @@ export class HypoAssistantUI {
 
             inputField.value = '';
             this.chatPanel.addMessage(query, 'user');
+
+            // 🔑 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: обнуляем ссылку, чтобы следующий запрос создал новое дерево
+            this.progressTree = null;
 
             this.abortController?.abort();
             this.abortController = new AbortController();
@@ -204,7 +213,9 @@ export class HypoAssistantUI {
 
         sendBtn.onclick = () => {
             if (sendBtn.innerHTML !== originalSendIcon) {
+                // Отмена текущего запроса
                 this.abortController?.abort();
+                this.progressTree?.freeze(); // зафиксировать прогресс на момент отмены
                 setSendButtonState(false);
             } else {
                 handleSend();

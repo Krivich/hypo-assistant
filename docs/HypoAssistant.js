@@ -1179,6 +1179,12 @@ User request: ${userQuery}`
       this.element.appendChild(msg);
       this.element.scrollTop = this.element.scrollHeight;
     }
+    addMessageWidget(element, role) {
+      const msg = document.createElement("div");
+      msg.className = `msg ${role}`;
+      msg.appendChild(element);
+      this.element.appendChild(msg);
+    }
     getElement() {
       return this.element;
     }
@@ -1365,31 +1371,36 @@ User request: ${userQuery}`
 
   // src/ui/components/PatchListView.ts
   var PatchListView = class {
-    constructor(chatPanel, patchItemTemplate, storage, onBack) {
+    constructor(chatPanel, patchItemTemplate, patchWidgetTemplate, storage, onFrozen) {
       this.chatPanel = chatPanel;
       this.patchItemTemplate = patchItemTemplate;
+      this.patchWidgetTemplate = patchWidgetTemplate;
       this.storage = storage;
-      this.onBack = onBack;
+      this.onFrozen = onFrozen;
     }
     show() {
+      const frag = document.importNode(this.patchWidgetTemplate.content, true);
+      const widget = frag.firstElementChild;
+      const listContainer = widget.querySelector(".hypo-patch-list");
+      const emptyEl = widget.querySelector(".hypo-patch-empty");
+      const saveBtn = widget.querySelector(".hypo-patch-save-btn");
       const patches = this.storage.getPatches();
-      this.chatPanel.clear();
       if (patches.length === 0) {
-        const empty = document.createElement("p");
-        empty.style.color = "#888";
-        empty.textContent = "No patches yet.";
-        this.chatPanel.getElement().appendChild(empty);
+        emptyEl.style.display = "block";
+        saveBtn.style.display = "none";
       } else {
+        emptyEl.style.display = "none";
+        saveBtn.style.display = "block";
         patches.forEach((p) => {
-          const frag = document.importNode(this.patchItemTemplate.content, true);
-          const checkbox = frag.querySelector("input");
-          const titleSpan = frag.querySelector("span");
-          const dateEl = frag.querySelector("small");
+          const itemFrag = document.importNode(this.patchItemTemplate.content, true);
+          const checkbox = itemFrag.querySelector("input");
+          const titleSpan = itemFrag.querySelector("span");
+          const dateEl = itemFrag.querySelector("small");
           checkbox.dataset.id = p.id;
           checkbox.checked = p.enabled;
           titleSpan.textContent = p.title;
           titleSpan.title = p.id;
-          dateEl.textContent = new Date(p.createdAt).toLocaleString();
+          dateEl.textContent = new Date(p.createdAt).toLocaleDateString();
           checkbox.addEventListener("change", () => {
             const id = checkbox.dataset.id;
             if (!id) return;
@@ -1401,23 +1412,17 @@ User request: ${userQuery}`
               PatchManager.applyToolCalls([patch.toolCall]);
             }
           });
-          this.chatPanel.getElement().appendChild(frag);
+          listContainer.appendChild(itemFrag);
         });
+        saveBtn.onclick = () => {
+          widget.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+            cb.disabled = true;
+          });
+          saveBtn.remove();
+          this.onFrozen?.();
+        };
       }
-      const backBtn = document.createElement("button");
-      backBtn.textContent = "\u2190 Back to chat";
-      backBtn.style.cssText = `
-      margin-top: 12px;
-      padding: 6px 12px;
-      background: #555;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-      font-size: 12px;
-    `;
-      backBtn.onclick = this.onBack;
-      this.chatPanel.getElement().appendChild(backBtn);
+      this.chatPanel.addMessageWidget(widget, "assist");
     }
   };
 
@@ -1478,7 +1483,7 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
   };
 
   // src/ui/index.html
-  var ui_default = '<!-- \u{1F99B} \u0412\u0441\u044F UI-\u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 \u2014 \u043E\u0431\u0451\u0440\u043D\u0443\u0442\u0430 \u0434\u043B\u044F \u0438\u0437\u043E\u043B\u044F\u0446\u0438\u0438 \u0441\u0442\u0438\u043B\u0435\u0439 -->\n<div id="hypo-assistant-core">\n\n    <!-- \u{1F518} ToggleButton.ts \u2014 \u043F\u043B\u0430\u0432\u0430\u044E\u0449\u0430\u044F \u043A\u043D\u043E\u043F\u043A\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u044F -->\n    <button id="hypo-toggle" aria-label="Open HypoAssistant">\u{1F99B}</button>\n\n    <!-- \u{1F5A5}\uFE0F HypoAssistantUI.ts (\u043E\u0440\u043A\u0435\u0441\u0442\u0440\u0430\u0442\u043E\u0440) \u2014 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u043C/\u0441\u043A\u0440\u044B\u0442\u0438\u0435\u043C \u043F\u0430\u043D\u0435\u043B\u0438 -->\n    <div id="hypo-panel" style="display: none;">\n\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043A\u043E\u043D\u0442\u0435\u0439\u043D\u0435\u0440 \u0434\u043B\u044F \u0432\u0441\u0435\u0445 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 (user/assist), \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u0438 \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\n        <div class="hypo-header">\n            <div class="hypo-title">\u{1F99B} <span>HypoAssistant v1.1</span></div>\n            <!-- \u{1F518} ToggleButton.ts (\u0432\u0442\u043E\u0440\u0430\u044F \u0440\u043E\u043B\u044C) \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 \u0441\u0432\u043E\u0440\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F \u043F\u0430\u043D\u0435\u043B\u0438 -->\n            <button id="hypo-collapse" aria-label="Collapse panel">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <polyline points="9 18 15 12 9 6"></polyline>\n                </svg>\n            </button>\n        </div>\n\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0435 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0447\u0430\u0442\u0430 -->\n        <div id="hypo-chat"></div>\n\n        <!-- \u270D\uFE0F ChatPanel.ts \u2014 \u043D\u043E \u043E\u0431\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 HypoAssistantUI \u0447\u0435\u0440\u0435\u0437 sendBtn.onclick -->\n        <div class="hypo-input-area">\n            <input type="text" id="hypo-input-field" placeholder="Describe change..." />\n            <button id="hypo-send" aria-label="Send">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <line x1="22" y1="2" x2="11" y2="13"/>\n                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>\n                </svg>\n            </button>\n            <template id="hypo-cancel-icon-template">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <line x1="18" y1="6" x2="6" y2="18"></line>\n                    <line x1="6" y1="6" x2="18" y2="18"></line>\n                </svg>\n            </template>\n        </div>\n\n        <!-- \u{1F6E0}\uFE0F HypoAssistantUI.ts \u2014 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F -->\n        <div class="hypo-actions-grid">\n            <button id="hypo-export">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>\n                    <polyline points="7 10 12 15 17 10"></polyline>\n                    <line x1="12" y1="15" x2="12" y2="3"></line>\n                </svg>\n                Export\n            </button>\n            <button id="hypo-patch-manager">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(45 12 12)" />\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(-45 12 12)" />\n                </svg>\n                Patches\n            </button>\n            <button id="hypo-settings">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <circle cx="12" cy="12" r="3"></circle>\n                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51-1.65 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1.65 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>\n                </svg>\n                Settings\n            </button>\n            <button id="hypo-reload">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <polyline points="23 4 23 10 17 10"></polyline>\n                    <polyline points="1 20 1 14 7 14"></polyline>\n                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>\n                </svg>\n                Reload\n            </button>\n        </div>\n\n    </div> <!-- /#hypo-panel -->\n\n\n    <!-- \u{1F4E6} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0434\u043B\u044F \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043E\u0434\u043D\u043E\u0433\u043E \u043F\u0430\u0442\u0447\u0430 -->\n    <template id="hypo-patch-item-template">\n        <div class="hypo-patch-item">\n            <label>\n                <input type="checkbox" />\n                <span></span>\n            </label>\n            <small></small>\n        </div>\n    </template>\n\n    <!-- \u{1F333} ProgressTree.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u043E\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u0438 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 -->\n    <template id="hypo-progress-line-template">\n        <div class="progress-line">\n            <span class="tree-skeleton"></span>\n            <span class="action-text"></span>\n            <span class="action-timer"></span>\n        </div>\n    </template>\n\n    <template id="hypo-progress-header-template">\n        <div class="progress-header">\n            <strong></strong>\n        </div>\n    </template>\n\n</div>';
+  var ui_default = '<!-- \u{1F99B} \u0412\u0441\u044F UI-\u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 \u2014 \u043E\u0431\u0451\u0440\u043D\u0443\u0442\u0430 \u0434\u043B\u044F \u0438\u0437\u043E\u043B\u044F\u0446\u0438\u0438 \u0441\u0442\u0438\u043B\u0435\u0439 -->\n<div id="hypo-assistant-core">\n\n    <!-- \u{1F518} ToggleButton.ts \u2014 \u043F\u043B\u0430\u0432\u0430\u044E\u0449\u0430\u044F \u043A\u043D\u043E\u043F\u043A\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u044F -->\n    <button id="hypo-toggle" aria-label="Open HypoAssistant">\u{1F99B}</button>\n\n    <!-- \u{1F5A5}\uFE0F HypoAssistantUI.ts (\u043E\u0440\u043A\u0435\u0441\u0442\u0440\u0430\u0442\u043E\u0440) \u2014 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u043C/\u0441\u043A\u0440\u044B\u0442\u0438\u0435\u043C \u043F\u0430\u043D\u0435\u043B\u0438 -->\n    <div id="hypo-panel" style="display: none;">\n\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043A\u043E\u043D\u0442\u0435\u0439\u043D\u0435\u0440 \u0434\u043B\u044F \u0432\u0441\u0435\u0445 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 (user/assist), \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u0438 \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\n        <div class="hypo-header">\n            <div class="hypo-title">\u{1F99B} <span>HypoAssistant v1.1</span></div>\n            <!-- \u{1F518} ToggleButton.ts (\u0432\u0442\u043E\u0440\u0430\u044F \u0440\u043E\u043B\u044C) \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 \u0441\u0432\u043E\u0440\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F \u043F\u0430\u043D\u0435\u043B\u0438 -->\n            <button id="hypo-collapse" aria-label="Collapse panel">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <polyline points="9 18 15 12 9 6"></polyline>\n                </svg>\n            </button>\n        </div>\n\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0435 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0447\u0430\u0442\u0430 -->\n        <div id="hypo-chat"></div>\n\n        <!-- \u270D\uFE0F ChatPanel.ts \u2014 \u043D\u043E \u043E\u0431\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 HypoAssistantUI \u0447\u0435\u0440\u0435\u0437 sendBtn.onclick -->\n        <div class="hypo-input-area">\n            <input type="text" id="hypo-input-field" placeholder="Describe change..." />\n            <button id="hypo-send" aria-label="Send">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <line x1="22" y1="2" x2="11" y2="13"/>\n                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>\n                </svg>\n            </button>\n            <template id="hypo-cancel-icon-template">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <line x1="18" y1="6" x2="6" y2="18"></line>\n                    <line x1="6" y1="6" x2="18" y2="18"></line>\n                </svg>\n            </template>\n        </div>\n\n        <!-- \u{1F6E0}\uFE0F HypoAssistantUI.ts \u2014 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F -->\n        <div class="hypo-actions-grid">\n            <button id="hypo-export">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>\n                    <polyline points="7 10 12 15 17 10"></polyline>\n                    <line x1="12" y1="15" x2="12" y2="3"></line>\n                </svg>\n                Export\n            </button>\n            <button id="hypo-patch-manager">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(45 12 12)" />\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(-45 12 12)" />\n                </svg>\n                Patches\n            </button>\n            <button id="hypo-settings">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <circle cx="12" cy="12" r="3"></circle>\n                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51-1.65 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1.65 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>\n                </svg>\n                Settings\n            </button>\n            <button id="hypo-reload">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <polyline points="23 4 23 10 17 10"></polyline>\n                    <polyline points="1 20 1 14 7 14"></polyline>\n                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>\n                </svg>\n                Reload\n            </button>\n        </div>\n\n    </div> <!-- /#hypo-panel -->\n\n\n    <!-- \u{1F9E9} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\n    <template id="hypo-patch-widget-template">\n        <div class="hypo-patch-widget">\n            <div class="hypo-patch-header">\u{1F9E9} Active patches</div>\n            <div class="hypo-patch-list"></div>\n            <p class="hypo-patch-empty" style="display: none; color: var(--ha-text-secondary); font-size: 13px; margin-top: 8px;">\n                No patches yet.\n            </p>\n            <button class="hypo-patch-save-btn">\u2705 Save & Freeze</button>\n        </div>\n    </template>\n    <!-- \u{1F4E6} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0434\u043B\u044F \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043E\u0434\u043D\u043E\u0433\u043E \u043F\u0430\u0442\u0447\u0430 -->\n    <template id="hypo-patch-item-template">\n        <div class="hypo-patch-item">\n            <label>\n                <input type="checkbox" />\n                <span></span>\n            </label>\n            <small></small>\n        </div>\n    </template>\n\n    <!-- \u{1F333} ProgressTree.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u043E\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u0438 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 -->\n    <template id="hypo-progress-line-template">\n        <div class="progress-line">\n            <span class="tree-skeleton"></span>\n            <span class="action-text"></span>\n            <span class="action-timer"></span>\n        </div>\n    </template>\n\n    <template id="hypo-progress-header-template">\n        <div class="progress-header">\n            <strong></strong>\n        </div>\n    </template>\n\n</div>';
 
   // src/ui/styles.css
   var styles_default = `#hypo-assistant-core {
@@ -1759,6 +1764,46 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
     padding: var(--ha-space-s) var(--ha-space-m);
     border-radius: var(--ha-radius-s);
     align-self: flex-start;
+}
+
+/* \u0412\u0438\u0434\u0436\u0435\u0442 \u043F\u0430\u0442\u0447\u0435\u0439 \u043A\u0430\u043A \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 */
+.hypo-patch-widget {
+    width: 100%;
+    padding: var(--ha-space-s) var(--ha-space-m);
+    background: var(--ha-surface);
+    border-radius: var(--ha-radius-m);
+    border: 1px solid var(--ha-border);
+    font-size: 13px;
+}
+
+.hypo-patch-header {
+    font-weight: 600;
+    margin-bottom: var(--ha-space-s);
+    color: var(--ha-text);
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-xs);
+}
+
+.hypo-patch-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-s);
+}
+
+.hypo-patch-save-btn {
+    margin-top: var(--ha-space-m);
+    padding: var(--ha-space-xs) var(--ha-space-s);
+    background: var(--ha-brand);
+    color: white;
+    border: none;
+    border-radius: var(--ha-radius-s);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.hypo-patch-save-btn:hover {
+    opacity: 0.9;
 }`;
 
   // src/ui/UI.ts
@@ -1844,8 +1889,15 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
       const patchList = new PatchListView(
         this.chatPanel,
         patchItemTpl,
+        document.getElementById("hypo-patch-widget-template"),
+        // ← новый шаблон
         this.storage,
-        showMainChat
+        () => {
+          this.chatPanel.addMessage(
+            "\u2705 Patch settings saved. Changes will persist after reload.",
+            "assist"
+          );
+        }
       );
       document.getElementById("hypo-patch-manager").onclick = () => {
         patchList.show();
@@ -1877,6 +1929,7 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
         if (!query) return;
         inputField.value = "";
         this.chatPanel.addMessage(query, "user");
+        this.progressTree = null;
         this.abortController?.abort();
         this.abortController = new AbortController();
         setSendButtonState(true);
@@ -1915,6 +1968,7 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
       sendBtn.onclick = () => {
         if (sendBtn.innerHTML !== originalSendIcon) {
           this.abortController?.abort();
+          this.progressTree?.freeze();
           setSendButtonState(false);
         } else {
           handleSend();

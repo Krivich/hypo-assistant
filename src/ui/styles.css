@@ -277,3 +277,43 @@
     border-radius: var(--ha-radius-s);
     align-self: flex-start;
 }
+
+/* Виджет патчей как сообщение */
+.hypo-patch-widget {
+    width: 100%;
+    padding: var(--ha-space-s) var(--ha-space-m);
+    background: var(--ha-surface);
+    border-radius: var(--ha-radius-m);
+    border: 1px solid var(--ha-border);
+    font-size: 13px;
+}
+
+.hypo-patch-header {
+    font-weight: 600;
+    margin-bottom: var(--ha-space-s);
+    color: var(--ha-text);
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-xs);
+}
+
+.hypo-patch-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-s);
+}
+
+.hypo-patch-save-btn {
+    margin-top: var(--ha-space-m);
+    padding: var(--ha-space-xs) var(--ha-space-s);
+    background: var(--ha-brand);
+    color: white;
+    border: none;
+    border-radius: var(--ha-radius-s);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.hypo-patch-save-btn:hover {
+    opacity: 0.9;
+}

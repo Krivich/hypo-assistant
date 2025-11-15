@@ -75,6 +75,17 @@
     </div> <!-- /#hypo-panel -->
 
 
+    <!-- 🧩 PatchListView.ts — шаблон виджета патчей -->
+    <template id="hypo-patch-widget-template">
+        <div class="hypo-patch-widget">
+            <div class="hypo-patch-header">🧩 Active patches</div>
+            <div class="hypo-patch-list"></div>
+            <p class="hypo-patch-empty" style="display: none; color: var(--ha-text-secondary); font-size: 13px; margin-top: 8px;">
+                No patches yet.
+            </p>
+            <button class="hypo-patch-save-btn">✅ Save & Freeze</button>
+        </div>
+    </template>
     <!-- 📦 PatchListView.ts — шаблон для отображения одного патча -->
     <template id="hypo-patch-item-template">
         <div class="hypo-patch-item">
