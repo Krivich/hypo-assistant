@@ -77,13 +77,15 @@
 
     <!-- 🧩 PatchListView.ts — шаблон виджета патчей -->
     <template id="hypo-patch-widget-template">
-        <div class="hypo-patch-widget">
-            <div class="hypo-patch-header">🧩 Active patches</div>
+        <div class="ha-widget">
+            <div class="ha-widget-header">🧩 Active patches</div>
             <div class="hypo-patch-list"></div>
-            <p class="hypo-patch-empty" style="display: none; color: var(--ha-text-secondary); font-size: 13px; margin-top: 8px;">
+            <p class="hypo-patch-empty ha-hint" style="display: none;">
                 No patches yet.
             </p>
-            <button class="hypo-patch-save-btn">✅ Save & Freeze</button>
+            <button class="ha-btn ha-btn--primary ha-btn--full hypo-patch-save-btn">
+                ✅ Save & Freeze
+            </button>
         </div>
     </template>
     <!-- 📦 PatchListView.ts — шаблон для отображения одного патча -->
@@ -108,6 +110,29 @@
 
     <template id="hypo-progress-header-template">
         <div class="progress-header"></div>
+    </template>
+
+    <!-- ⚙️ ConfigView.ts — шаблон виджета настроек -->
+    <template id="hypo-config-widget-template">
+        <div class="ha-widget">
+            <div class="ha-widget-header">⚙️ LLM Settings</div>
+            <div class="ha-input-group">
+                <input class="ha-input" type="text" name="apiEndpoint" placeholder=" " />
+                <label class="ha-input-label">API Endpoint</label>
+            </div>
+            <div class="ha-input-group">
+                <input class="ha-input" type="password" name="apiKey" autocomplete="off" placeholder=" " />
+                <label class="ha-input-label">API Key</label>
+            </div>
+            <div class="ha-input-group">
+                <input class="ha-input" type="text" name="model" placeholder=" " />
+                <label class="ha-input-label">Model</label>
+            </div>
+            <button class="ha-btn ha-btn--primary ha-btn--full hypo-config-save-btn">
+                ✅ Save
+            </button>
+            <p class="ha-hint">Changes take effect immediately. API key is stored only in your browser.</p>
+        </div>
     </template>
 
 </div>

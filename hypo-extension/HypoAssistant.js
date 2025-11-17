@@ -1179,11 +1179,12 @@ User request: ${userQuery}`
       this.element.appendChild(msg);
       this.element.scrollTop = this.element.scrollHeight;
     }
-    addMessageWidget(element, role) {
-      const msg = document.createElement("div");
-      msg.className = `msg ${role}`;
-      msg.appendChild(element);
-      this.element.appendChild(msg);
+    // ✅ Обновлённый метод: виджет СТАНОВИТСЯ сообщением
+    addMessageWidget(widget, role) {
+      const classes = Array.from(widget.classList);
+      widget.className = `msg ${role} ${classes.join(" ")}`;
+      this.element.appendChild(widget);
+      this.element.scrollTop = this.element.scrollHeight;
     }
     getElement() {
       return this.element;
@@ -1381,6 +1382,7 @@ User request: ${userQuery}`
     show() {
       const frag = document.importNode(this.patchWidgetTemplate.content, true);
       const widget = frag.firstElementChild;
+      if (!widget) throw new Error("Patch widget root element missing");
       const listContainer = widget.querySelector(".hypo-patch-list");
       const emptyEl = widget.querySelector(".hypo-patch-empty");
       const saveBtn = widget.querySelector(".hypo-patch-save-btn");
@@ -1414,49 +1416,18 @@ User request: ${userQuery}`
           });
           listContainer.appendChild(itemFrag);
         });
-        saveBtn.onclick = () => {
-          widget.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-            cb.disabled = true;
-          });
-          saveBtn.remove();
-          this.onFrozen?.();
-        };
       }
-      this.chatPanel.addMessageWidget(widget, "assist");
-    }
-  };
-
-  // src/ui/components/ConfigModal.ts
-  var ConfigModal = class {
-    constructor(storage, chatPanel) {
-      this.storage = storage;
-      this.chatPanel = chatPanel;
-    }
-    show() {
-      const configRaw = localStorage.getItem("hypoAssistantConfig");
-      let config = configRaw ? JSON.parse(configRaw) : {};
-      if (config.apiKey !== void 0 || config.apiEndpoint !== void 0 || config.model !== void 0) {
-        config = {
-          llm: {
-            apiKey: config.apiKey,
-            apiEndpoint: config.apiEndpoint,
-            model: config.model
-          }
-        };
-      }
-      const llm = config.llm || {};
-      const ep = prompt("API Endpoint:", llm.apiEndpoint || "https://openrouter.ai/api/v1/chat/completions") || llm.apiEndpoint;
-      const key = prompt("API Key:") || llm.apiKey;
-      const model = prompt("Model:", llm.model || "tngtech/deepseek-r1t2-chimera:free") || llm.model;
-      const newConfig = {
-        llm: { apiEndpoint: ep, apiKey: key, model }
+      const freeze = () => {
+        widget.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+          cb.disabled = true;
+        });
+        saveBtn.remove();
+        widget.classList.add("frozen");
+        this.onFrozen?.();
       };
-      localStorage.setItem("hypoAssistantConfig", JSON.stringify(newConfig));
-      this.chatPanel.addMessage("\u2705 Config saved.", "assist");
-      if (key && key !== llm.apiKey) {
-        localStorage.removeItem("hypoAssistantSemanticIndex");
-        this.chatPanel.addMessage("\u{1F504} Semantic index will be rebuilt on next request.", "assist");
-      }
+      saveBtn.addEventListener("click", freeze);
+      this.chatPanel.addMessageWidget(widget, "assist");
+      return { freeze };
     }
   };
 
@@ -1483,47 +1454,60 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
   };
 
   // src/ui/index.html
-  var ui_default = '<!-- \u{1F99B} \u0412\u0441\u044F UI-\u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 \u2014 \u043E\u0431\u0451\u0440\u043D\u0443\u0442\u0430 \u0434\u043B\u044F \u0438\u0437\u043E\u043B\u044F\u0446\u0438\u0438 \u0441\u0442\u0438\u043B\u0435\u0439 -->\n<div id="hypo-assistant-core">\n\n    <!-- \u{1F518} ToggleButton.ts \u2014 \u043F\u043B\u0430\u0432\u0430\u044E\u0449\u0430\u044F \u043A\u043D\u043E\u043F\u043A\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u044F -->\n    <button id="hypo-toggle" aria-label="Open HypoAssistant">\u{1F99B}</button>\n\n    <!-- \u{1F5A5}\uFE0F HypoAssistantUI.ts (\u043E\u0440\u043A\u0435\u0441\u0442\u0440\u0430\u0442\u043E\u0440) \u2014 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u043C/\u0441\u043A\u0440\u044B\u0442\u0438\u0435\u043C \u043F\u0430\u043D\u0435\u043B\u0438 -->\n    <div id="hypo-panel" style="display: none;">\n\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043A\u043E\u043D\u0442\u0435\u0439\u043D\u0435\u0440 \u0434\u043B\u044F \u0432\u0441\u0435\u0445 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 (user/assist), \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u0438 \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\n        <div class="hypo-header">\n            <div class="hypo-title">\u{1F99B} <span>HypoAssistant v1.1</span></div>\n            <!-- \u{1F518} ToggleButton.ts (\u0432\u0442\u043E\u0440\u0430\u044F \u0440\u043E\u043B\u044C) \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 \u0441\u0432\u043E\u0440\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F \u043F\u0430\u043D\u0435\u043B\u0438 -->\n            <button id="hypo-collapse" aria-label="Collapse panel">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <polyline points="9 18 15 12 9 6"></polyline>\n                </svg>\n            </button>\n        </div>\n\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0435 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0447\u0430\u0442\u0430 -->\n        <div id="hypo-chat"></div>\n\n        <!-- \u270D\uFE0F ChatPanel.ts \u2014 \u043D\u043E \u043E\u0431\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 HypoAssistantUI \u0447\u0435\u0440\u0435\u0437 sendBtn.onclick -->\n        <div class="hypo-input-area">\n            <input type="text" id="hypo-input-field" placeholder="Describe change..." />\n            <button id="hypo-send" aria-label="Send">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <line x1="22" y1="2" x2="11" y2="13"/>\n                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>\n                </svg>\n            </button>\n            <template id="hypo-cancel-icon-template">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <line x1="18" y1="6" x2="6" y2="18"></line>\n                    <line x1="6" y1="6" x2="18" y2="18"></line>\n                </svg>\n            </template>\n        </div>\n\n        <!-- \u{1F6E0}\uFE0F HypoAssistantUI.ts \u2014 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F -->\n        <div class="hypo-actions-grid">\n            <button id="hypo-export">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>\n                    <polyline points="7 10 12 15 17 10"></polyline>\n                    <line x1="12" y1="15" x2="12" y2="3"></line>\n                </svg>\n                Export\n            </button>\n            <button id="hypo-patch-manager">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(45 12 12)" />\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(-45 12 12)" />\n                </svg>\n                Patches\n            </button>\n            <button id="hypo-settings">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <circle cx="12" cy="12" r="3"></circle>\n                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51-1.65 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1.65 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>\n                </svg>\n                Settings\n            </button>\n            <button id="hypo-reload">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <polyline points="23 4 23 10 17 10"></polyline>\n                    <polyline points="1 20 1 14 7 14"></polyline>\n                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>\n                </svg>\n                Reload\n            </button>\n        </div>\n\n    </div> <!-- /#hypo-panel -->\n\n\n    <!-- \u{1F9E9} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\n    <template id="hypo-patch-widget-template">\n        <div class="hypo-patch-widget">\n            <div class="hypo-patch-header">\u{1F9E9} Active patches</div>\n            <div class="hypo-patch-list"></div>\n            <p class="hypo-patch-empty" style="display: none; color: var(--ha-text-secondary); font-size: 13px; margin-top: 8px;">\n                No patches yet.\n            </p>\n            <button class="hypo-patch-save-btn">\u2705 Save & Freeze</button>\n        </div>\n    </template>\n    <!-- \u{1F4E6} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0434\u043B\u044F \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043E\u0434\u043D\u043E\u0433\u043E \u043F\u0430\u0442\u0447\u0430 -->\n    <template id="hypo-patch-item-template">\n        <div class="hypo-patch-item">\n            <label>\n                <input type="checkbox" />\n                <span></span>\n            </label>\n            <small></small>\n        </div>\n    </template>\n\n    <!-- \u{1F333} ProgressTree.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u043E\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u0438 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 -->\n    <template id="hypo-progress-line-template">\n        <div class="progress-line">\n            <span class="tree-skeleton"></span>\n            <span class="action-text"></span>\n            <span class="action-timer"></span>\n        </div>\n    </template>\n\n    <template id="hypo-progress-header-template">\n        <div class="progress-header"></div>\n    </template>\n\n</div>';
+  var ui_default = '<!-- \u{1F99B} \u0412\u0441\u044F UI-\u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 \u2014 \u043E\u0431\u0451\u0440\u043D\u0443\u0442\u0430 \u0434\u043B\u044F \u0438\u0437\u043E\u043B\u044F\u0446\u0438\u0438 \u0441\u0442\u0438\u043B\u0435\u0439 -->\n<div id="hypo-assistant-core">\n\n    <!-- \u{1F518} ToggleButton.ts \u2014 \u043F\u043B\u0430\u0432\u0430\u044E\u0449\u0430\u044F \u043A\u043D\u043E\u043F\u043A\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u044F -->\n    <button id="hypo-toggle" aria-label="Open HypoAssistant">\u{1F99B}</button>\n\n    <!-- \u{1F5A5}\uFE0F HypoAssistantUI.ts (\u043E\u0440\u043A\u0435\u0441\u0442\u0440\u0430\u0442\u043E\u0440) \u2014 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u043C/\u0441\u043A\u0440\u044B\u0442\u0438\u0435\u043C \u043F\u0430\u043D\u0435\u043B\u0438 -->\n    <div id="hypo-panel" style="display: none;">\n\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043A\u043E\u043D\u0442\u0435\u0439\u043D\u0435\u0440 \u0434\u043B\u044F \u0432\u0441\u0435\u0445 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 (user/assist), \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u0438 \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\n        <div class="hypo-header">\n            <div class="hypo-title">\u{1F99B} <span>HypoAssistant v1.1</span></div>\n            <!-- \u{1F518} ToggleButton.ts (\u0432\u0442\u043E\u0440\u0430\u044F \u0440\u043E\u043B\u044C) \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 \u0441\u0432\u043E\u0440\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F \u043F\u0430\u043D\u0435\u043B\u0438 -->\n            <button id="hypo-collapse" aria-label="Collapse panel">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <polyline points="9 18 15 12 9 6"></polyline>\n                </svg>\n            </button>\n        </div>\n\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0435 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0447\u0430\u0442\u0430 -->\n        <div id="hypo-chat"></div>\n\n        <!-- \u270D\uFE0F ChatPanel.ts \u2014 \u043D\u043E \u043E\u0431\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 HypoAssistantUI \u0447\u0435\u0440\u0435\u0437 sendBtn.onclick -->\n        <div class="hypo-input-area">\n            <input type="text" id="hypo-input-field" placeholder="Describe change..." />\n            <button id="hypo-send" aria-label="Send">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <line x1="22" y1="2" x2="11" y2="13"/>\n                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>\n                </svg>\n            </button>\n            <template id="hypo-cancel-icon-template">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <line x1="18" y1="6" x2="6" y2="18"></line>\n                    <line x1="6" y1="6" x2="18" y2="18"></line>\n                </svg>\n            </template>\n        </div>\n\n        <!-- \u{1F6E0}\uFE0F HypoAssistantUI.ts \u2014 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F -->\n        <div class="hypo-actions-grid">\n            <button id="hypo-export">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>\n                    <polyline points="7 10 12 15 17 10"></polyline>\n                    <line x1="12" y1="15" x2="12" y2="3"></line>\n                </svg>\n                Export\n            </button>\n            <button id="hypo-patch-manager">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(45 12 12)" />\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(-45 12 12)" />\n                </svg>\n                Patches\n            </button>\n            <button id="hypo-settings">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <circle cx="12" cy="12" r="3"></circle>\n                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51-1.65 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1.65 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>\n                </svg>\n                Settings\n            </button>\n            <button id="hypo-reload">\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\n                    <polyline points="23 4 23 10 17 10"></polyline>\n                    <polyline points="1 20 1 14 7 14"></polyline>\n                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>\n                </svg>\n                Reload\n            </button>\n        </div>\n\n    </div> <!-- /#hypo-panel -->\n\n\n    <!-- \u{1F9E9} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\n    <template id="hypo-patch-widget-template">\n        <div class="ha-widget">\n            <div class="ha-widget-header">\u{1F9E9} Active patches</div>\n            <div class="hypo-patch-list"></div>\n            <p class="hypo-patch-empty ha-hint" style="display: none;">\n                No patches yet.\n            </p>\n            <button class="ha-btn ha-btn--primary ha-btn--full hypo-patch-save-btn">\n                \u2705 Save & Freeze\n            </button>\n        </div>\n    </template>\n    <!-- \u{1F4E6} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0434\u043B\u044F \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043E\u0434\u043D\u043E\u0433\u043E \u043F\u0430\u0442\u0447\u0430 -->\n    <template id="hypo-patch-item-template">\n        <div class="hypo-patch-item">\n            <label>\n                <input type="checkbox" />\n                <span></span>\n            </label>\n            <small></small>\n        </div>\n    </template>\n\n    <!-- \u{1F333} ProgressTree.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u043E\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u0438 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 -->\n    <template id="hypo-progress-line-template">\n        <div class="progress-line">\n            <span class="tree-skeleton"></span>\n            <span class="action-text"></span>\n            <span class="action-timer"></span>\n        </div>\n    </template>\n\n    <template id="hypo-progress-header-template">\n        <div class="progress-header"></div>\n    </template>\n\n    <!-- \u2699\uFE0F ConfigView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A -->\n    <template id="hypo-config-widget-template">\n        <div class="ha-widget">\n            <div class="ha-widget-header">\u2699\uFE0F LLM Settings</div>\n            <div class="ha-input-group">\n                <input class="ha-input" type="text" name="apiEndpoint" placeholder=" " />\n                <label class="ha-input-label">API Endpoint</label>\n            </div>\n            <div class="ha-input-group">\n                <input class="ha-input" type="password" name="apiKey" autocomplete="off" placeholder=" " />\n                <label class="ha-input-label">API Key</label>\n            </div>\n            <div class="ha-input-group">\n                <input class="ha-input" type="text" name="model" placeholder=" " />\n                <label class="ha-input-label">Model</label>\n            </div>\n            <button class="ha-btn ha-btn--primary ha-btn--full hypo-config-save-btn">\n                \u2705 Save\n            </button>\n            <p class="ha-hint">Changes take effect immediately. API key is stored only in your browser.</p>\n        </div>\n    </template>\n\n</div>';
 
   // src/ui/styles.css
-  var styles_default = `#hypo-assistant-core {
-    /* --- \u041A\u0430\u0441\u0442\u043E\u043C\u0438\u0437\u0430\u0446\u0438\u044F \u0447\u0435\u0440\u0435\u0437 CSS vars --- */
-    --ha-space-xs: 4px;
-    --ha-space-s: 8px;
-    --ha-space-m: 12px;
-    --ha-space-l: 16px;
-    --ha-space-xl: 20px;
+  var styles_default = `/* === HypoAssistant UI \u2013 \u043F\u043E\u043B\u043D\u044B\u0439 CSS === */
 
-    --ha-radius-s: 8px;
-    --ha-radius-m: 12px;
-    --ha-radius-l: 16px;
+#hypo-assistant-core {
+    /* --- \u0414\u0438\u0437\u0430\u0439\u043D-\u0442\u043E\u043A\u0435\u043D\u044B --- */
+    --ha-space-1: 4px;
+    --ha-space-2: 8px;
+    --ha-space-3: 12px;
+    --ha-space-4: 16px;
+    --ha-space-5: 20px;
+
+    --ha-radius-xs: 6px;
+    --ha-radius-sm: 8px;
+    --ha-radius-md: 12px;
+    --ha-radius-lg: 16px;
     --ha-radius-full: 50%;
 
     --ha-btn-size: 40px;
     --ha-panel-width: 360px;
 
     /* \u0426\u0432\u0435\u0442\u0430 \u2014 \u0441\u0432\u0435\u0442\u043B\u0430\u044F \u0442\u0435\u043C\u0430 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E */
-    --ha-bg: #ffffff;
-    --ha-surface: #ffffff;
-    --ha-text: #111111;
-    --ha-text-secondary: #666666;
-    --ha-border: #e0e0e0;
-    --ha-brand: #6c63ff;
-    --ha-user-bg: #e6e6ff;
-    --ha-coach-bg: #f0f0f0;
+    --ha-color-bg: #ffffff;
+    --ha-color-surface: #ffffff;
+    --ha-color-bg-elevated: #f9fafb;
+    --ha-color-bg-input: #ffffff;
+    --ha-color-text: #111111;
+    --ha-color-text-primary: #111111;
+    --ha-color-text-secondary: #666666;
+    --ha-color-text-placeholder: #999999;
+    --ha-color-border: #e0e0e0;
+    --ha-color-primary: #6c63ff;
+    --ha-color-primary-hover: #5a52d5;
+    --ha-color-user-bg: #e6e6ff;
+    --ha-color-coach-bg: #f0f0f0;
     --ha-shadow: 0 6px 16px rgba(0,0,0,0.08);
     --ha-shadow-toggle: 0 4px 12px rgba(0,0,0,0.12);
 }
 
 @media (prefers-color-scheme: dark) {
     #hypo-assistant-core {
-        --ha-bg: #121212;
-        --ha-surface: #1e1e1e;
-        --ha-text: #e0e0e0;
-        --ha-text-secondary: #a0a0a0;
-        --ha-border: #333333;
-        --ha-user-bg: #2a273f;
-        --ha-coach-bg: #2d2d2d;
+        --ha-color-bg: #121212;
+        --ha-color-surface: #1e1e1e;
+        --ha-color-bg-elevated: #252525;
+        --ha-color-bg-input: #2a2a2a;
+        --ha-color-text: #e0e0e0;
+        --ha-color-text-primary: #e0e0e0;
+        --ha-color-text-secondary: #a0a0a0;
+        --ha-color-text-placeholder: #999;
+        --ha-color-border: #444;
+        --ha-color-user-bg: #2a273f;
+        --ha-color-coach-bg: #2d2d2d;
+        --ha-color-primary-hover: #7f77ff;
     }
 }
 
@@ -1536,11 +1520,11 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
 /* Toggle button (floating) */
 #hypo-assistant-core #hypo-toggle {
     position: fixed;
-    bottom: var(--ha-space-l);
-    right: var(--ha-space-l);
+    bottom: var(--ha-space-4);
+    right: var(--ha-space-4);
     width: var(--ha-btn-size);
     height: var(--ha-btn-size);
-    background: var(--ha-brand);
+    background: var(--ha-color-primary);
     color: white;
     border-radius: var(--ha-radius-full);
     display: flex;
@@ -1562,8 +1546,8 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
     bottom: 0;
     width: 100%;
     max-width: var(--ha-panel-width);
-    background: var(--ha-bg);
-    color: var(--ha-text);
+    background: var(--ha-color-bg);
+    color: var(--ha-color-text);
     font-family: 'Inter', system-ui, sans-serif;
     z-index: 10000;
     display: flex;
@@ -1574,12 +1558,12 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
 
 /* Header */
 #hypo-assistant-core .hypo-header {
-    padding: var(--ha-space-m);
-    background: var(--ha-surface);
+    padding: var(--ha-space-3);
+    background: var(--ha-color-surface);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--ha-border);
+    border-bottom: 1px solid var(--ha-color-border);
 }
 
 #hypo-assistant-core .hypo-title {
@@ -1587,12 +1571,12 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
     font-size: 16px;
     display: flex;
     align-items: center;
-    gap: var(--ha-space-xs);
+    gap: var(--ha-space-1);
 }
 
 #hypo-assistant-core #hypo-collapse {
     background: none;
-    color: var(--ha-text-secondary);
+    color: var(--ha-color-text-secondary);
     border: none;
     width: 24px;
     height: 24px;
@@ -1609,29 +1593,49 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
 #hypo-assistant-core #hypo-chat {
     flex: 1;
     overflow-y: auto;
-    padding: var(--ha-space-l);
+    padding: var(--ha-space-4);
     font-size: 14px;
     line-height: 1.5;
     display: flex;
     flex-direction: column;
-    gap: var(--ha-space-m);
+    gap: var(--ha-space-3);
+}
+
+/* === \u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F === */
+#hypo-assistant-core .msg {
+    padding: var(--ha-space-2) var(--ha-space-3);
+    border-radius: var(--ha-radius-md);
+    max-width: 100%;
+    word-break: break-word;
+}
+
+#hypo-assistant-core .msg.user {
+    background: var(--ha-color-user-bg);
+    align-self: flex-end;
+    border-bottom-right-radius: 0;
+}
+
+#hypo-assistant-core .msg.assist {
+    background: var(--ha-color-coach-bg);
+    align-self: flex-start;
+    border-bottom-left-radius: 0;
 }
 
 /* Input area */
 #hypo-assistant-core .hypo-input-area {
-    padding: var(--ha-space-m) var(--ha-space-l) var(--ha-space-l);
-    background: var(--ha-surface);
+    padding: var(--ha-space-3) var(--ha-space-4) var(--ha-space-4);
+    background: var(--ha-color-surface);
     display: flex;
-    gap: var(--ha-space-s);
+    gap: var(--ha-space-2);
 }
 
 #hypo-assistant-core #hypo-input-field {
     flex: 1;
-    background: var(--ha-surface);
-    color: var(--ha-text);
-    border: 1px solid var(--ha-border);
-    border-radius: var(--ha-radius-m);
-    padding: var(--ha-space-s) var(--ha-space-m);
+    background: var(--ha-color-bg-input);
+    color: var(--ha-color-text-primary);
+    border: 1px solid var(--ha-color-border);
+    border-radius: var(--ha-radius-md);
+    padding: var(--ha-space-2) var(--ha-space-3);
     font-family: inherit;
     font-size: 14px;
 }
@@ -1639,7 +1643,7 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
 #hypo-assistant-core #hypo-send {
     width: var(--ha-btn-size);
     height: var(--ha-btn-size);
-    background: var(--ha-brand);
+    background: var(--ha-color-primary);
     color: white;
     border: none;
     border-radius: var(--ha-radius-full);
@@ -1652,39 +1656,163 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
 
 /* Action buttons grid */
 #hypo-assistant-core .hypo-actions-grid {
-    padding: 0 var(--ha-space-l) var(--ha-space-l);
+    padding: 0 var(--ha-space-4) var(--ha-space-4);
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: var(--ha-space-s);
+    gap: var(--ha-space-2);
 }
 
 #hypo-assistant-core .hypo-actions-grid button {
-    padding: var(--ha-space-s);
-    background: var(--ha-surface);
-    border: 1px solid var(--ha-border);
-    border-radius: var(--ha-radius-m);
+    padding: var(--ha-space-2);
+    background: var(--ha-color-bg-elevated);
+    border: 1px solid var(--ha-color-border);
+    border-radius: var(--ha-radius-md);
     cursor: pointer;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--ha-space-xs);
+    gap: var(--ha-space-1);
     font-size: 12px;
-    color: var(--ha-text);
+    color: var(--ha-color-text-primary);
 }
 
-/* Patch item (from template) */
+/* ========================================== */
+/* === \u0411\u0430\u0437\u043E\u0432\u044B\u0435 \u043F\u0440\u0438\u043C\u0438\u0442\u0438\u0432\u044B UI (ha-*)          === */
+/* ========================================== */
+
+#hypo-assistant-core .ha-widget {
+    margin: var(--ha-space-2) 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 14px;
+    color: var(--ha-color-text-primary);
+}
+
+#hypo-assistant-core .ha-widget-header {
+    font-weight: 700;
+    margin-bottom: var(--ha-space-4);
+    color: var(--ha-color-primary);
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-1);
+}
+
+#hypo-assistant-core .ha-input-group {
+    position: relative;
+    margin-bottom: var(--ha-space-5);
+}
+
+#hypo-assistant-core .ha-input {
+    width: 100%;
+    padding: var(--ha-space-3);
+    border: 1px solid var(--ha-color-border);
+    border-radius: var(--ha-radius-md);
+    background: var(--ha-color-bg-input);
+    color: var(--ha-color-text-primary);
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+}
+
+#hypo-assistant-core .ha-input:focus {
+    border-color: var(--ha-color-primary);
+}
+
+#hypo-assistant-core .ha-input-label {
+    position: absolute;
+    top: var(--ha-space-3);
+    left: var(--ha-space-3);
+    color: var(--ha-color-text-placeholder);
+    font-size: 14px;
+    pointer-events: none;
+    transition: all 0.2s ease;
+}
+
+#hypo-assistant-core .ha-input:focus + .ha-input-label,
+#hypo-assistant-core .ha-input:not(:focus):not(:placeholder-shown) + .ha-input-label {
+    top: calc(-0.5 * var(--ha-space-3) - 2px);
+    left: var(--ha-space-2);
+    font-size: 12px;
+    background: linear-gradient(
+            to top,
+            var(--ha-color-bg-input) calc(50% + 1px),
+            transparent calc(50% + 1px)
+    );
+    padding: 0 var(--ha-space-1);
+    border-radius: var(--ha-radius-xs);
+    color: var(--ha-color-text-secondary);
+}
+
+#hypo-assistant-core .ha-input:focus + .ha-input-label {
+    color: var(--ha-color-primary);
+}
+
+#hypo-assistant-core .ha-btn {
+    font-family: inherit;
+    font-size: 14px;
+    padding: var(--ha-space-2) var(--ha-space-3);
+    border-radius: var(--ha-radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-weight: 600;
+    text-align: center;
+    transition: background 0.2s, border-color 0.2s;
+    background: var(--ha-color-surface);
+    color: var(--ha-color-text-primary);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ha-space-1);
+}
+
+#hypo-assistant-core .ha-btn--primary {
+    background: var(--ha-color-primary);
+    color: white;
+    border: none;
+}
+
+#hypo-assistant-core .ha-btn--primary:hover {
+    background: var(--ha-color-primary-hover);
+}
+
+#hypo-assistant-core .ha-btn--full {
+    width: 100%;
+    padding-top: var(--ha-space-2);
+    padding-bottom: var(--ha-space-2);
+}
+
+#hypo-assistant-core .ha-hint {
+    margin-top: var(--ha-space-4);
+    font-size: 12px;
+    color: var(--ha-color-text-secondary);
+    line-height: 1.4;
+    text-align: center;
+}
+
+/* ========================================== */
+/* === \u0421\u043F\u0435\u0446\u0438\u0444\u0438\u0447\u043D\u044B\u0435 \u043A\u043E\u043C\u043F\u043E\u043D\u0435\u043D\u0442\u044B               === */
+/* ========================================== */
+
+/* \u042D\u043B\u0435\u043C\u0435\u043D\u0442\u044B \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 */
+#hypo-assistant-core .hypo-patch-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-2);
+}
+
 #hypo-assistant-core .hypo-patch-item {
-    padding: var(--ha-space-m);
-    background: var(--ha-surface);
-    border-radius: var(--ha-radius-m);
-    border: 1px solid var(--ha-border);
+    padding: var(--ha-space-3);
+    background: var(--ha-color-bg-elevated);
+    border-radius: var(--ha-radius-sm);
+    border: 1px solid var(--ha-color-border);
+    font-size: 14px;
 }
 
 #hypo-assistant-core .hypo-patch-item label {
     display: flex;
     align-items: center;
-    gap: var(--ha-space-s);
+    gap: var(--ha-space-2);
 }
 
 #hypo-assistant-core .hypo-patch-item input[type="checkbox"] {
@@ -1693,210 +1821,122 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
 }
 
 #hypo-assistant-core .hypo-patch-item span {
-    color: var(--ha-text);
+    color: var(--ha-color-text-primary);
     font-weight: 500;
 }
 
 #hypo-assistant-core .hypo-patch-item small {
-    color: var(--ha-text-secondary);
+    color: var(--ha-color-text-secondary);
     font-size: 11px;
-    margin-top: var(--ha-space-xs);
+    margin-top: var(--ha-space-1);
     display: block;
 }
 
-/* Progress tree (used dynamically) */
-.progress-tree {
-    background: var(--ha-coach-bg);
-    border-radius: var(--ha-radius-m);
-    padding: var(--ha-space-s) var(--ha-space-m); /* \u043A\u0430\u043A \u0443 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 */
-    font-family: monospace;
+#hypo-assistant-core .hypo-patch-empty {
+    color: var(--ha-color-text-secondary);
     font-size: 14px;
-    line-height: 1.4;
-    margin: var(--ha-space-s) 0; /* \u043D\u0435\u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0432\u0435\u0440\u0442\u0438\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u043E\u0442\u0441\u0442\u0443\u043F */
+    margin-top: var(--ha-space-2);
 }
 
-.progress-line {
-    display: flex;
-    align-items: baseline;
-}
-
-.progress-line .tree-skeleton {
-    opacity: 0.7;
-    user-select: none;
-    white-space: pre;
-    min-width: 24px;
-}
-
-.progress-line .action-text {
-    margin-right: 8px;
-}
-
-.progress-line .action-timer {
-    font-family: monospace;
-    font-size: 12px;
-    color: var(--ha-text-secondary);
-    min-width: 48px;
-    text-align: right;
-}
-
-.progress-line .action-timer.completed {
-    color: var(--ha-brand);
-}
-
-.progress-header {
-    padding: var(--ha-space-s) var(--ha-space-m);
-    font-weight: 600;
-    color: var(--ha-text);
-}
-
-/* === \u0415\u0434\u0438\u043D\u0430\u044F \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0430 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F === */
-#hypo-assistant-core .msg {
-    padding: var(--ha-space-s) var(--ha-space-m);
-    border-radius: var(--ha-radius-m);
-    max-width: 100%;
-    word-break: break-word;
-}
-
-/* \u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C: \u043A\u0432\u0430\u0434\u0440\u0430\u0442\u043D\u044B\u0439 \u041F\u0420\u0410\u0412\u042B\u0419 \u043D\u0438\u0436\u043D\u0438\u0439 \u0443\u0433\u043E\u043B */
-#hypo-assistant-core .msg.user {
-    background: var(--ha-user-bg);
-    align-self: flex-end;
-    border-bottom-right-radius: 0;
-}
-
-/* \u0410\u0441\u0441\u0438\u0441\u0442\u0435\u043D\u0442: \u043A\u0432\u0430\u0434\u0440\u0430\u0442\u043D\u044B\u0439 \u041B\u0415\u0412\u042B\u0419 \u043D\u0438\u0436\u043D\u0438\u0439 \u0443\u0433\u043E\u043B */
-#hypo-assistant-core .msg.assist {
-    background: var(--ha-coach-bg);
-    align-self: flex-start;
-    border-bottom-left-radius: 0;
-}
-
-/* === \u0421\u043F\u0435\u0446\u0438\u0430\u043B\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0435 \u0432\u0438\u0434\u0436\u0435\u0442\u044B (\u043D\u0430\u0441\u043B\u0435\u0434\u0443\u044E\u0442 \u043E\u0442 .msg.assist) === */
-
-/* \u0414\u0435\u0440\u0435\u0432\u043E \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 */
+/* \u041F\u0440\u043E\u0433\u0440\u0435\u0441\u0441-\u0434\u0435\u0440\u0435\u0432\u043E */
 #hypo-assistant-core .progress-tree {
-    background: var(--ha-coach-bg);
-    padding: var(--ha-space-s) var(--ha-space-m);
     font-family: monospace;
     font-size: 14px;
     line-height: 1.4;
-    border-radius: var(--ha-radius-m);
-    border-bottom-left-radius: 0; /* \u043A\u0430\u043A \u0443 \u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043D\u0442\u0430 */
 }
 
-/* \u0412\u0438\u0434\u0436\u0435\u0442 \u043F\u0430\u0442\u0447\u0435\u0439 \u2014 \u0442\u0435\u043F\u0435\u0440\u044C \u043D\u0430\u0441\u043B\u0435\u0434\u0443\u0435\u0442 \u043E\u0431\u0449\u0438\u0439 \u0441\u0442\u0438\u043B\u044C */
-#hypo-assistant-core .hypo-patch-widget {
-    background: var(--ha-coach-bg);
-    padding: var(--ha-space-s) var(--ha-space-m);
-    font-size: 13px;
-    border-radius: var(--ha-radius-m);
-    border-bottom-left-radius: 0; /* \u043A\u0430\u043A \u0443 \u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043D\u0442\u0430 */
-}
-
-/* \u0412\u043D\u0443\u0442\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 */
-.hypo-patch-header {
-    font-weight: 600;
-    margin-bottom: var(--ha-space-s);
-    color: var(--ha-text);
-    display: flex;
-    align-items: center;
-    gap: var(--ha-space-xs);
-}
-
-.hypo-patch-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--ha-space-s);
-}
-
-.hypo-patch-item {
-    padding: var(--ha-space-m);
-    background: var(--ha-surface);
-    border-radius: var(--ha-radius-s);
-    border: 1px solid var(--ha-border);
-}
-
-.hypo-patch-item label {
-    display: flex;
-    align-items: center;
-    gap: var(--ha-space-s);
-}
-
-.hypo-patch-item input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-}
-
-.hypo-patch-item span {
-    color: var(--ha-text);
-    font-weight: 500;
-}
-
-.hypo-patch-item small {
-    color: var(--ha-text-secondary);
-    font-size: 11px;
-    margin-top: var(--ha-space-xs);
-    display: block;
-}
-
-.hypo-patch-save-btn {
-    margin-top: var(--ha-space-m);
-    padding: var(--ha-space-xs) var(--ha-space-s);
-    background: var(--ha-brand);
-    color: white;
-    border: none;
-    border-radius: var(--ha-radius-s);
-    font-size: 12px;
-    cursor: pointer;
-}
-
-.hypo-patch-save-btn:hover {
-    opacity: 0.9;
-}
-
-/* \u041F\u0443\u0441\u0442\u043E\u0439 \u0441\u043F\u0438\u0441\u043E\u043A \u043F\u0430\u0442\u0447\u0435\u0439 */
-.hypo-patch-empty {
-    color: var(--ha-text-secondary);
-    font-size: 13px;
-    margin-top: 8px;
-}
-
-/* === \u041F\u0440\u043E\u0433\u0440\u0435\u0441\u0441-\u0434\u0435\u0440\u0435\u0432\u043E: \u0441\u0442\u0440\u043E\u043A\u0438 === */
-.progress-line {
+#hypo-assistant-core .progress-line {
     display: flex;
     align-items: baseline;
 }
 
-.progress-line .tree-skeleton {
+#hypo-assistant-core .progress-line .tree-skeleton {
     opacity: 0.7;
     user-select: none;
     white-space: pre;
     min-width: 24px;
 }
 
-.progress-line .action-text {
+#hypo-assistant-core .progress-line .action-text {
     margin-right: 8px;
 }
 
-.progress-line .action-timer {
+#hypo-assistant-core .progress-line .action-timer {
     font-family: monospace;
     font-size: 12px;
-    color: var(--ha-text-secondary);
+    color: var(--ha-color-text-secondary);
     min-width: 48px;
     text-align: right;
 }
 
-.progress-line .action-timer.completed {
-    color: var(--ha-brand);
+#hypo-assistant-core .progress-line .action-timer.completed {
+    color: var(--ha-color-primary);
 }
 
-/* === \u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A \u0432\u043D\u0443\u0442\u0440\u0438 \u0434\u0435\u0440\u0435\u0432\u0430 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 (\u0435\u0441\u043B\u0438 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F) === */
-.progress-header {
-    padding: var(--ha-space-xs) 0 var(--ha-space-s) 0;
+#hypo-assistant-core .progress-header {
+    padding: var(--ha-space-1) 0 var(--ha-space-2) 0;
     font-weight: 600;
-    color: var(--ha-text);
+    color: var(--ha-color-text-primary);
     font-size: 14px;
 }`;
+
+  // src/ui/components/ConfigView.ts
+  var ConfigView = class {
+    constructor(storage, chatPanel) {
+      this.storage = storage;
+      this.chatPanel = chatPanel;
+    }
+    show() {
+      const templateEl = document.getElementById("hypo-config-widget-template");
+      if (!(templateEl instanceof HTMLTemplateElement)) {
+        throw new Error("Config widget template not found");
+      }
+      const frag = document.importNode(templateEl.content, true);
+      const widget = frag.firstElementChild;
+      if (!widget) throw new Error("Config widget root element missing");
+      const endpointInput = widget.querySelector('[name="apiEndpoint"]');
+      const keyInput = widget.querySelector('[name="apiKey"]');
+      const modelInput = widget.querySelector('[name="model"]');
+      const saveBtn = widget.querySelector(".hypo-config-save-btn");
+      if (!endpointInput || !keyInput || !modelInput || !saveBtn) {
+        throw new Error("Config widget form elements missing");
+      }
+      const configRaw = localStorage.getItem("hypoAssistantConfig");
+      let config = configRaw ? JSON.parse(configRaw) : {};
+      if (config.apiKey !== void 0 || config.apiEndpoint !== void 0 || config.model !== void 0) {
+        config = { llm: { apiKey: config.apiKey, apiEndpoint: config.apiEndpoint, model: config.model } };
+      }
+      const llm = config.llm || {};
+      endpointInput.value = llm.apiEndpoint || "https://openrouter.ai/api/v1/chat/completions";
+      keyInput.value = llm.apiKey || "";
+      modelInput.value = llm.model || "tngtech/deepseek-r1t2-chimera:free";
+      const freeze = () => {
+        widget.querySelectorAll(".ha-input").forEach((el) => {
+          el.disabled = true;
+        });
+        saveBtn.remove();
+        widget.classList.add("frozen");
+      };
+      saveBtn.addEventListener("click", () => {
+        const newConfig = {
+          llm: {
+            apiEndpoint: endpointInput.value.trim(),
+            apiKey: keyInput.value.trim(),
+            model: modelInput.value.trim()
+          }
+        };
+        localStorage.setItem("hypoAssistantConfig", JSON.stringify(newConfig));
+        this.chatPanel.addMessage("\u2705 LLM config saved.", "assist");
+        if (keyInput.value && keyInput.value !== llm.apiKey) {
+          localStorage.removeItem("hypoAssistantSemanticIndex");
+          this.chatPanel.addMessage("\u{1F504} Semantic index will be rebuilt on next request.", "assist");
+        }
+        freeze();
+      });
+      this.chatPanel.addMessageWidget(widget, "assist");
+      return { freeze };
+    }
+  };
 
   // src/ui/UI.ts
   var HypoAssistantUI = class {
@@ -1909,6 +1949,8 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
     toggleButton;
     chatPanel;
     progressTree = null;
+    activeConfigWidget = null;
+    activePatchWidget = null;
     show() {
       if (this.panel) return;
       this.injectStyles();
@@ -1982,7 +2024,6 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
         this.chatPanel,
         patchItemTpl,
         document.getElementById("hypo-patch-widget-template"),
-        // ← новый шаблон
         this.storage,
         () => {
           this.chatPanel.addMessage(
@@ -1992,11 +2033,13 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
         }
       );
       document.getElementById("hypo-patch-manager").onclick = () => {
-        patchList.show();
+        this.activePatchWidget?.freeze();
+        this.activePatchWidget = patchList.show();
       };
-      const configModal = new ConfigModal(this.storage, this.chatPanel);
+      const configView = new ConfigView(this.storage, this.chatPanel);
       document.getElementById("hypo-settings").onclick = () => {
-        configModal.show();
+        this.activeConfigWidget?.freeze();
+        this.activeConfigWidget = configView.show();
       };
       const exportHandler = new ExportHandler();
       document.getElementById("hypo-export").onclick = () => {

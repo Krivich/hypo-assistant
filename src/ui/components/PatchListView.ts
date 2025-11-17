@@ -1,31 +1,31 @@
-// src/ui/components/PatchListView.ts
-
-import type { StoredPatch } from '../../types.js';
 import { PatchManager } from '../../core/PatchManager.js';
 import { StorageAdapter } from '../../config/StorageAdapter.js';
 import { ChatPanel } from './ChatPanel.js';
+import {Freezable} from "../../types";
 
 export class PatchListView {
     constructor(
         private chatPanel: ChatPanel,
         private patchItemTemplate: HTMLTemplateElement,
-        private patchWidgetTemplate: HTMLTemplateElement, // ← новый шаблон
+        private patchWidgetTemplate: HTMLTemplateElement,
         private storage: StorageAdapter,
         private onFrozen?: () => void
     ) {}
 
-    show(): void {
+    show(): Freezable {
         const frag = document.importNode(this.patchWidgetTemplate.content, true);
         const widget = frag.firstElementChild as HTMLElement;
+        if (!widget) throw new Error('Patch widget root element missing');
+
         const listContainer = widget.querySelector('.hypo-patch-list')!;
-        const emptyEl = widget.querySelector('.hypo-patch-empty')!;
-        const saveBtn = widget.querySelector('.hypo-patch-save-btn')!;
+        const emptyEl = widget.querySelector('.hypo-patch-empty')! as HTMLElement;
+        const saveBtn = widget.querySelector('.hypo-patch-save-btn')! as HTMLElement;
 
         const patches = this.storage.getPatches();
 
         if (patches.length === 0) {
             emptyEl.style.display = 'block';
-            saveBtn.style.display = 'none'; // нет смысла сохранять пустоту
+            saveBtn.style.display = 'none';
         } else {
             emptyEl.style.display = 'none';
             saveBtn.style.display = 'block';
@@ -56,20 +56,22 @@ export class PatchListView {
 
                 listContainer.appendChild(itemFrag);
             });
-
-            // Обработчик "Save & Freeze"
-            saveBtn.onclick = () => {
-                // Блокируем все чекбоксы
-                widget.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                    (cb as HTMLInputElement).disabled = true;
-                });
-                saveBtn.remove(); // убираем кнопку
-
-                this.onFrozen?.();
-            };
         }
 
-        // Добавляем виджет как сообщение от ассистента
+        // Freeze-функция
+        const freeze = () => {
+            widget.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                (cb as HTMLInputElement).disabled = true;
+            });
+            saveBtn.remove();
+            widget.classList.add('frozen');
+            this.onFrozen?.();
+        };
+
+        saveBtn.addEventListener('click', freeze);
+
         this.chatPanel.addMessageWidget(widget, 'assist');
+
+        return { freeze };
     }
 }

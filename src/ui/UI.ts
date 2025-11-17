@@ -1,4 +1,4 @@
-import type { PatchResult } from '../types.js';
+import {Freezable, PatchResult} from '../types.js';
 import { PatchManager } from '../core/PatchManager.js';
 import { StorageAdapter } from '../config/StorageAdapter.js';
 import { AdaptiveProgressObserver } from '../utils/AdaptiveProgressObserver.js';
@@ -7,12 +7,12 @@ import { ToggleButton } from './components/ToggleButton.js';
 import { ChatPanel } from './components/ChatPanel.js';
 import { ProgressTree } from './components/ProgressTree.js';
 import { PatchListView } from './components/PatchListView.js';
-import { ConfigModal } from './components/ConfigModal.js';
 import { ExportHandler } from './components/ExportHandler.js';
 
 // Импорт разметки как строки (требует esbuild loader для .html)
 import TEMPLATE_HTML from './index.html';
 import STYLES_CSS from './styles.css';
+import {ConfigView} from "./components/ConfigView";
 
 export class HypoAssistantUI {
     private panel: HTMLElement | null = null;
@@ -21,6 +21,9 @@ export class HypoAssistantUI {
     private toggleButton!: ToggleButton;
     private chatPanel!: ChatPanel;
     private progressTree: ProgressTree | null = null;
+
+    private activeConfigWidget: Freezable  | null = null;
+    private activePatchWidget: Freezable | null = null;
 
     constructor(
         private onUserRequest: (
@@ -117,10 +120,11 @@ export class HypoAssistantUI {
             this.chatPanel.addMessage('🦛 Ready. Describe your change.', 'assist');
         };
 
+        // В setupChatAndPatches():
         const patchList = new PatchListView(
             this.chatPanel,
             patchItemTpl,
-            document.getElementById('hypo-patch-widget-template') as HTMLTemplateElement, // ← новый шаблон
+            document.getElementById('hypo-patch-widget-template') as HTMLTemplateElement,
             this.storage,
             () => {
                 this.chatPanel.addMessage(
@@ -131,12 +135,14 @@ export class HypoAssistantUI {
         );
 
         document.getElementById('hypo-patch-manager')!.onclick = () => {
-            patchList.show();
+            this.activePatchWidget?.freeze();
+            this.activePatchWidget = patchList.show();
         };
 
-        const configModal = new ConfigModal(this.storage, this.chatPanel);
+        const configView = new ConfigView(this.storage, this.chatPanel);
         document.getElementById('hypo-settings')!.onclick = () => {
-            configModal.show();
+            this.activeConfigWidget?.freeze();
+            this.activeConfigWidget = configView.show();
         };
 
         const exportHandler = new ExportHandler();

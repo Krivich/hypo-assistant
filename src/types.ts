@@ -56,3 +56,7 @@ export interface PatchResult {
     patches: StoredPatch[];
     groupTitle: string; // для UI
 }
+
+export interface Freezable {
+    freeze(): void;
+}

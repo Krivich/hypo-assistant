@@ -187,7 +187,7 @@ export class ProgressTree {
         });
     }
 
-    freeze(): void {
+    public freeze(): void {
         this.clearAllTimers();
         this.activeNode = null;
         if (this.rootNodes.length > 0) {
