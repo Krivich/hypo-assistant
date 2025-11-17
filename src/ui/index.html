@@ -88,6 +88,7 @@
             </button>
         </div>
     </template>
+
     <!-- 📦 PatchListView.ts — шаблон для отображения одного патча -->
     <template id="hypo-patch-item-template">
         <div class="hypo-patch-item">
@@ -99,17 +100,21 @@
         </div>
     </template>
 
-    <!-- 🌳 ProgressTree.ts — шаблон одной строки прогресса -->
+    <!-- 🕒 ProgressView.ts — шаблон виджета прогресса -->
+    <template id="hypo-progress-widget-template">
+        <div class="ha-widget">
+            <div class="ha-widget-header">🕒 In progress</div>
+            <div class="progress-tree-lines"></div>
+        </div>
+    </template>
+
+    <!-- 🕒 ProgressView.ts — строка прогресса -->
     <template id="hypo-progress-line-template">
         <div class="progress-line">
             <span class="tree-skeleton"></span>
             <span class="action-text"></span>
             <span class="action-timer"></span>
         </div>
-    </template>
-
-    <template id="hypo-progress-header-template">
-        <div class="progress-header"></div>
     </template>
 
     <!-- ⚙️ ConfigView.ts — шаблон виджета настроек -->

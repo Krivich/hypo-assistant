@@ -5,7 +5,7 @@ import { AdaptiveProgressObserver } from '../utils/AdaptiveProgressObserver.js';
 
 import { ToggleButton } from './components/ToggleButton.js';
 import { ChatPanel } from './components/ChatPanel.js';
-import { ProgressTree } from './components/ProgressTree.js';
+import {ProgressView} from './components/ProgressTree.js';
 import { PatchListView } from './components/PatchListView.js';
 import { ExportHandler } from './components/ExportHandler.js';
 
@@ -20,7 +20,7 @@ export class HypoAssistantUI {
 
     private toggleButton!: ToggleButton;
     private chatPanel!: ChatPanel;
-    private progressTree: ProgressTree | null = null;
+    private progressView: ProgressView | null = null;
 
     private activeConfigWidget: Freezable  | null = null;
     private activePatchWidget: Freezable | null = null;
@@ -152,9 +152,8 @@ export class HypoAssistantUI {
     }
 
     private setupInputHandling(elements: ReturnType<HypoAssistantUI['getUIElements']>) {
-        const { sendBtn, inputField, chatEl, progressLineTpl, progressHeaderTpl, cancelIconTpl } = elements;
+        const { sendBtn, inputField, progressLineTpl, progressHeaderTpl, cancelIconTpl } = elements;
 
-        // Сохраняем оригинальный SVG самолёта
         const originalSendIcon = sendBtn.innerHTML;
 
         const setSendButtonState = (isWorking: boolean) => {
@@ -175,29 +174,26 @@ export class HypoAssistantUI {
             inputField.value = '';
             this.chatPanel.addMessage(query, 'user');
 
-            // 🔑 КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: обнуляем ссылку, чтобы следующий запрос создал новое дерево
-            this.progressTree = null;
+            // 🔑 КЛЮЧ: сбрасываем ссылку на текущий прогресс-виджет
+            this.progressView?.freeze(); // зафиксировать предыдущий, если был
+            this.progressView = null;
 
             this.abortController?.abort();
             this.abortController = new AbortController();
             setSendButtonState(true);
 
             const progress = new AdaptiveProgressObserver((update) => {
-                if (!this.progressTree) {
-                    this.progressTree = new ProgressTree(
-                        chatEl,
-                        progressLineTpl,
-                        progressHeaderTpl,
-                        query
-                    );
+                if (!this.progressView) {
+                    this.progressView = new ProgressView(this.chatPanel, progressLineTpl, query);
                 }
-                this.progressTree.render(update.path, update.remainingMs);
-                this.progressTree.getElement().scrollIntoView({ behavior: 'smooth' });
+                this.progressView.render(update.path, update.remainingMs);
+                // Прокручиваем к виджету (не к .container, а к .widget)
+                this.progressView.widget.scrollIntoView({ behavior: 'smooth' });
             });
 
             try {
                 const result = await this.onUserRequest(query, progress, this.abortController.signal);
-                this.progressTree?.freeze();
+                this.progressView?.freeze(); // фиксируем финальное состояние
                 setSendButtonState(false);
 
                 this.chatPanel.addMessage(result.groupTitle, 'assist');
@@ -209,7 +205,7 @@ export class HypoAssistantUI {
                     this.chatPanel.addMessage('✅ Applied. Enable in "🧩 Patches" to persist.', 'assist');
                 }
             } catch (err) {
-                this.progressTree?.freeze();
+                this.progressView?.freeze();
                 setSendButtonState(false);
                 if ((err as Error).name !== 'AbortError') {
                     this.chatPanel.addMessage(`❌ ${(err as Error).message}`, 'assist');
@@ -219,9 +215,8 @@ export class HypoAssistantUI {
 
         sendBtn.onclick = () => {
             if (sendBtn.innerHTML !== originalSendIcon) {
-                // Отмена текущего запроса
                 this.abortController?.abort();
-                this.progressTree?.freeze(); // зафиксировать прогресс на момент отмены
+                this.progressView?.freeze();
                 setSendButtonState(false);
             } else {
                 handleSend();

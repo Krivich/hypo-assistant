@@ -1,4 +1,6 @@
-// ProgressTree.ts
+// src/ui/components/ProgressView.ts
+import { Freezable } from '../../types.js';
+import { ChatPanel } from './ChatPanel.js';
 
 interface TreeNode {
     name: string;
@@ -9,42 +11,41 @@ interface TreeNode {
     parent: TreeNode | null;
 }
 
-export class ProgressTree {
-    private container: HTMLElement;
-    private treeLinesContainer: HTMLElement; // ← контейнер только для строк дерева
-    private readonly lineTemplate: HTMLTemplateElement;
-    private readonly headerTemplate: HTMLTemplateElement | null = null;
-    private rootNodes: TreeNode[] = [];
-    private nodeMap = new Map<string, TreeNode>();
+export class ProgressView implements Freezable {
+    private widget: HTMLElement;
+    private treeLinesContainer: HTMLElement;
+    private lineTemplate: HTMLTemplateElement;
     private activeNode: TreeNode | null = null;
-    private activeRemainingMs: number = 0;
+    private activeRemainingMs = 0;
+    private nodeMap = new Map<string, TreeNode>();
+    private rootNodes: TreeNode[] = [];
 
     constructor(
-        parent: HTMLElement,
+        private chatPanel: ChatPanel,
         lineTemplate: HTMLTemplateElement,
-        headerTemplate: HTMLTemplateElement | null = null,
-        userQuery?: string
+        userQuery: string
     ) {
-        this.container = document.createElement('div');
-        this.container.className = 'progress-tree';
-
-        // Добавляем заголовок, если указан
-        if (userQuery && headerTemplate) {
-            const frag = document.importNode(headerTemplate.content, true);
-            const headerEl = frag.firstElementChild as HTMLElement;
-            // Убираем <strong> — делаем текст обычным
-            headerEl.textContent = userQuery;
-            this.container.appendChild(headerEl);
+        const templateEl = document.getElementById('hypo-progress-widget-template');
+        if (!(templateEl instanceof HTMLTemplateElement)) {
+            throw new Error('Progress widget template not found');
         }
 
-        // Создаём отдельный контейнер для строк дерева
-        this.treeLinesContainer = document.createElement('div');
-        this.treeLinesContainer.className = 'progress-tree-lines';
-        this.container.appendChild(this.treeLinesContainer);
+        const frag = document.importNode(templateEl.content, true);
+        this.widget = frag.firstElementChild as HTMLElement;
+        if (!this.widget) throw new Error('Progress widget root missing');
 
-        parent.appendChild(this.container);
+        // Обновляем заголовок, чтобы отразить запрос (опционально)
+        const header = this.widget.querySelector('.ha-widget-header');
+        if (header) {
+            // Ограничиваем длину, чтобы не ломать UI
+            const displayQuery = userQuery.length > 30 ? userQuery.slice(0, 30) + '…' : userQuery;
+            header.textContent = `🕒 ${displayQuery}`;
+        }
+
+        this.treeLinesContainer = this.widget.querySelector('.progress-tree-lines')!;
         this.lineTemplate = lineTemplate;
-        this.headerTemplate = headerTemplate;
+
+        this.chatPanel.addMessageWidget(this.widget, 'assist');
     }
 
     private getKey(path: string[]): string {
@@ -80,11 +81,10 @@ export class ProgressTree {
         return node;
     }
 
-    render(currentPath: string[], remainingMs: number): void {
+    public render(currentPath: string[], remainingMs: number): void {
         const now = Date.now();
         const currentKey = this.getKey(currentPath);
 
-        // Завершаем предыдущий активный узел, если он не является предком текущего
         if (this.activeNode && this.activeNode.path.join('\0') !== currentKey) {
             const isActiveAncestor =
                 currentPath.length > this.activeNode.path.length &&
@@ -106,7 +106,6 @@ export class ProgressTree {
 
     private renderTree(): void {
         this.clearAllTimers();
-        // Очищаем ТОЛЬКО контейнер строк, не трогая заголовок
         this.treeLinesContainer.innerHTML = '';
 
         const renderNodes = (nodes: TreeNode[], depth: number) => {
@@ -128,7 +127,6 @@ export class ProgressTree {
         const textEl = line.querySelector<HTMLElement>('.action-text')!;
         const timerEl = line.querySelector<HTMLElement>('.action-timer')!;
 
-        // Генерация псевдографики с правильными отступами
         let prefix = '';
         if (depth > 0) {
             prefix = '   '.repeat(depth - 1) + '└─ ';
@@ -147,7 +145,6 @@ export class ProgressTree {
             timerEl.className = 'action-timer';
         }
 
-        // Добавляем в контейнер строк, а не в общий контейнер
         this.treeLinesContainer.appendChild(frag);
     }
 
@@ -177,7 +174,7 @@ export class ProgressTree {
     }
 
     private clearAllTimers(): void {
-        const timers = this.container.querySelectorAll('.action-timer[data-interval-id]');
+        const timers = this.widget.querySelectorAll('.action-timer[data-interval-id]');
         timers.forEach((el) => {
             const id = el.getAttribute('data-interval-id');
             if (id) {
@@ -185,18 +182,6 @@ export class ProgressTree {
                 el.removeAttribute('data-interval-id');
             }
         });
-    }
-
-    public freeze(): void {
-        this.clearAllTimers();
-        this.activeNode = null;
-        if (this.rootNodes.length > 0) {
-            const lastNode = this._getLastNode();
-            if (lastNode && lastNode.duration === null) {
-                lastNode.duration = Date.now() - lastNode.startTime;
-            }
-        }
-        this.renderTree();
     }
 
     private _getLastNode(): TreeNode | null {
@@ -213,20 +198,27 @@ export class ProgressTree {
         return node;
     }
 
-    clear(): void {
+    // === Freezable ===
+    freeze(): void {
         this.clearAllTimers();
-        this.rootNodes = [];
-        this.nodeMap.clear();
         this.activeNode = null;
-        this.treeLinesContainer.innerHTML = ''; // только строки
+        if (this.rootNodes.length > 0) {
+            const lastNode = this._getLastNode();
+            if (lastNode && lastNode.duration === null) {
+                lastNode.duration = Date.now() - lastNode.startTime;
+            }
+        }
+        this.renderTree();
+
+        // Визуальная фиксация
+        this.widget.classList.add('frozen');
+        const hint = this.widget.querySelector('.ha-hint');
+        if (hint) hint.remove();
     }
 
+    // Опционально: можно вызывать при полной очистке чата
     destroy(): void {
-        this.clear();
-        this.container.remove();
-    }
-
-    getElement(): HTMLElement {
-        return this.container;
+        this.clearAllTimers();
+        this.widget.remove();
     }
 }

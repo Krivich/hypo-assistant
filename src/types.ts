@@ -36,6 +36,7 @@ export type ToolCall =
 // ТЕЗИС: Патч — атомарное, обратимое изменение с уникальным ID и заголовком.
 export interface StoredPatch {
     id: string;
+    requestId: string;
     toolCall: ToolCall;
     dependsOn: string[];
     enabled: boolean;

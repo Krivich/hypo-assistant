@@ -1,7 +1,7 @@
 // ТЕЗИС: Хранилище — это адаптер, а не глобальное состояние. Оно не знает логики, только ключи и структуру.
 // ТЕЗИС: Все операции с localStorage изолированы в одном месте — это упрощает миграцию на IndexedDB.
 
-import type { Sources, StoredPatch } from '../types';
+import type {PatchGroup, Sources, StoredPatch} from '../types';
 
 const CONFIG_KEY = 'hypoAssistantConfig';
 const ORIGINALS_KEY = 'hypoAssistantOriginals';
@@ -66,5 +66,34 @@ export class StorageAdapter {
 
     saveLLMUsage(stats: LLMUsageStats): void {
         localStorage.setItem(LLM_USAGE_KEY, JSON.stringify(stats, null, 2));
+    }
+
+    // Возвращает группированные сессии (для UI)
+    getPatchSessions(): PatchGroup[] {
+        const patches = this.getPatches();
+        const groups = new Map<string, PatchGroup>();
+
+        // Группируем по requestId
+        for (const patch of patches) {
+            if (!groups.has(patch.requestId)) {
+                groups.set(patch.requestId, {
+                    requestId: patch.requestId,
+                    userQuery: patch.title, // fallback если нет отдельного запроса
+                    groupTitle: patch.title, // временное значение — будет перезаписано
+                    patches: []
+                });
+            }
+            groups.get(patch.requestId)!.patches.push(patch);
+        }
+
+        // Преобразуем в массив и улучшаем заголовки
+        return Array.from(groups.values()).map(group => {
+            // Лучший групповой заголовок — берём из любого патча (они одинаковые)
+            const title = group.patches[0]?.title.split(' → ')[0] || group.groupTitle;
+            return {
+                ...group,
+                groupTitle: title.length > 80 ? title.substring(0, 77) + '...' : title
+            };
+        });
     }
 }

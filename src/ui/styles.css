@@ -229,6 +229,11 @@
     color: var(--ha-color-text-primary);
 }
 
+#hypo-assistant-core .ha-widget.frozen {
+    opacity: 0.9;
+    pointer-events: none;
+}
+
 #hypo-assistant-core .ha-widget-header {
     font-weight: 700;
     margin-bottom: var(--ha-space-4);
@@ -379,11 +384,12 @@
     margin-top: var(--ha-space-2);
 }
 
-/* Прогресс-дерево */
-#hypo-assistant-core .progress-tree {
+/* Прогресс-строки (внутри ha-widget) */
+#hypo-assistant-core .progress-tree-lines {
     font-family: monospace;
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.4;
+    margin-top: var(--ha-space-2);
 }
 
 #hypo-assistant-core .progress-line {
@@ -412,11 +418,4 @@
 
 #hypo-assistant-core .progress-line .action-timer.completed {
     color: var(--ha-color-primary);
-}
-
-#hypo-assistant-core .progress-header {
-    padding: var(--ha-space-1) 0 var(--ha-space-2) 0;
-    font-weight: 600;
-    color: var(--ha-color-text-primary);
-    font-size: 14px;
 }
