@@ -1,6 +1,6 @@
 import { StorageAdapter } from '../../config/StorageAdapter.js';
 import { ChatPanel } from './ChatPanel.js';
-import {Freezable} from "../../types";
+import {Terminable} from "../../types";
 
 export class ConfigView {
     constructor(
@@ -8,7 +8,7 @@ export class ConfigView {
         private chatPanel: ChatPanel
     ) {}
 
-    show(): Freezable {
+    show(): Terminable {
         const templateEl = document.getElementById('hypo-config-widget-template');
         if (!(templateEl instanceof HTMLTemplateElement)) {
             throw new Error('Config widget template not found');

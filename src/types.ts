@@ -53,11 +53,12 @@ export interface PatchGroup {
 }
 
 export interface PatchResult {
-    message: string;
-    patches: StoredPatch[];
     groupTitle: string; // для UI
+    patches: StoredPatch[];
 }
 
-export interface Freezable {
+export type TerminateReason = 'save' | 'freeze';
+
+export interface Terminable {
     freeze(): void;
 }

@@ -52,7 +52,7 @@ var HypoAssistant = (() => {
   // src/config/StorageAdapter.ts
   var ORIGINALS_KEY = "hypoAssistantOriginals";
   var SEMANTIC_INDEX_KEY = "hypoAssistantSemanticIndex";
-  var PATCHES_KEY = "hypoAssistantPatches";
+  var PATCH_GROUPS_KEY = "hypoAssistantPatchGroups";
   var DIAGNOSTICS_KEY = "hypoAssistantDiagnostics";
   var LLM_USAGE_KEY = "hypoAssistantLLMUsage";
   var StorageAdapter = class {
@@ -70,13 +70,12 @@ var HypoAssistant = (() => {
     saveSemanticIndex(index) {
       localStorage.setItem(SEMANTIC_INDEX_KEY, JSON.stringify(index));
     }
-    // Возвращаем StoredPatch[], а не старый Patch[]
-    getPatches() {
-      const raw = localStorage.getItem(PATCHES_KEY);
+    getPatchGroups() {
+      const raw = localStorage.getItem(PATCH_GROUPS_KEY);
       return raw ? JSON.parse(raw) : [];
     }
-    savePatches(patches) {
-      localStorage.setItem(PATCHES_KEY, JSON.stringify(patches));
+    savePatchGroups(groups) {
+      localStorage.setItem(PATCH_GROUPS_KEY, JSON.stringify(groups));
     }
     getDiagnostics() {
       const raw = localStorage.getItem(DIAGNOSTICS_KEY);
@@ -91,31 +90,6 @@ var HypoAssistant = (() => {
     }
     saveLLMUsage(stats) {
       localStorage.setItem(LLM_USAGE_KEY, JSON.stringify(stats, null, 2));
-    }
-    // Возвращает группированные сессии (для UI)
-    getPatchSessions() {
-      const patches = this.getPatches();
-      const groups = /* @__PURE__ */ new Map();
-      for (const patch of patches) {
-        if (!groups.has(patch.requestId)) {
-          groups.set(patch.requestId, {
-            requestId: patch.requestId,
-            userQuery: patch.title,
-            // fallback если нет отдельного запроса
-            groupTitle: patch.title,
-            // временное значение — будет перезаписано
-            patches: []
-          });
-        }
-        groups.get(patch.requestId).patches.push(patch);
-      }
-      return Array.from(groups.values()).map((group) => {
-        const title = group.patches[0]?.title.split(" \u2192 ")[0] || group.groupTitle;
-        return {
-          ...group,
-          groupTitle: title.length > 80 ? title.substring(0, 77) + "..." : title
-        };
-      });
     }
   };
 
@@ -602,6 +576,17 @@ Now generate your final output.
     return syncSources;
   }
 
+  // src/utils/dedent.ts
+  function dedent(strings, ...values) {
+    let full = String.raw({ raw: strings }, ...values);
+    full = full.replace(/^\n|\n\s*$/g, "");
+    const indent = full.match(/^[ \t]*(?=\S)/gm)?.reduce(
+      (min, line) => Math.min(min, line.length),
+      Infinity
+    ) || 0;
+    return indent > 0 ? full.replace(new RegExp(`^[ \\t]{${indent}}`, "gm"), "") : full;
+  }
+
   // src/core/SemanticIndexer.ts
   var CORE_INSTRUCTIONS = `
 You are generating a single relevance record for a live code editing system.
@@ -667,29 +652,29 @@ Rules:
       } else if (currentMeta.type === "css") {
         fileSpecificInstructions = CSS_SPECIFIC;
       } else {
-        fileSpecificInstructions = `
-Focus on the semantic meaning and structure of the content.
-`;
+        fileSpecificInstructions = dedent`
+                Focus on the semantic meaning and structure of the content.
+            `;
       }
       const validationPrompt = {
         role: "system",
-        content: `${CORE_INSTRUCTIONS} ${fileSpecificInstructions} ${RESPONSE_FORMAT} ${STRICT_RULES} The content of file "${fileId}" has changed.
-Old index entry:
-${JSON.stringify(oldIndexEntry, null, 2)}
-
-Active patches that depend on this file:
-${JSON.stringify(relevantPatches, null, 2)}
-
-Please:
-1. Generate a new index for this file (same format as before, adhering to the instructions above for ${currentMeta.type} files).
-2. For each patch, decide if it is still valid (can be applied to the new content).
-Return ONLY valid JSON:
-{
-  "newIndex": { "purpose": "...", "key_entities": [...], "dependencies": [...] },
-  "validatedPatches": [
-    { "id": "patch-id-1", "valid": true|false }
-  ]
-}`
+        content: dedent`${CORE_INSTRUCTIONS} ${fileSpecificInstructions} ${RESPONSE_FORMAT} ${STRICT_RULES} The content of file "${fileId}" has changed.
+                Old index entry:
+                ${JSON.stringify(oldIndexEntry, null, 2)}
+                
+                Active patches that depend on this file:
+                ${JSON.stringify(relevantPatches, null, 2)}
+                
+                Please:
+                1. Generate a new index for this file (same format as before, adhering to the instructions above for ${currentMeta.type} files).
+                2. For each patch, decide if it is still valid (can be applied to the new content).
+                Return ONLY valid JSON:
+                {
+                  "newIndex": { "purpose": "...", "key_entities": [...], "dependencies": [...] },
+                  "validatedPatches": [
+                    { "id": "patch-id-1", "valid": true|false }
+                  ]
+                }`
       };
       const userPrompt = {
         role: "user",
@@ -717,8 +702,7 @@ ${currentMeta.content}`
       const fileIds = Object.keys(originals);
       const indexerFlow = progress.startFlow({ steps: fileIds.length });
       let needsSave = false;
-      for (let idx = 0; idx < fileIds.length; idx++) {
-        const fileId = fileIds[idx];
+      for (const fileId of fileIds) {
         const meta = originals[fileId];
         const stored = semanticIndex[fileId];
         const storedHash = typeof stored === "object" && stored !== null && "hash" in stored ? stored.hash : void 0;
@@ -726,7 +710,7 @@ ${currentMeta.content}`
         if (!stored || storedHash !== meta.hash || isFallbackIndex(stored)) {
           try {
             if (stored && storedHash !== meta.hash) {
-              const allPatches = this.storage.getPatches();
+              const allPatches = this.storage.getPatchGroups().flatMap((g) => g.patches);
               const relevantPatches = allPatches.filter((p) => p.dependsOn.includes(fileId));
               const result = await this.validateAndReindexChunk(
                 fileId,
@@ -738,26 +722,29 @@ ${currentMeta.content}`
               );
               semanticIndex[fileId] = { ...result.newIndex, hash: meta.hash };
               if (result.validatedPatches?.length) {
-                const patchesMap = new Map(result.validatedPatches.map((v) => [v.id, v.valid]));
+                const validMap = new Map(result.validatedPatches.map((v) => [v.id, v.valid]));
                 const updatedPatches = allPatches.map(
-                  (p) => patchesMap.has(p.id) ? { ...p, enabled: patchesMap.get(p.id) === true && p.enabled } : p
+                  (p) => validMap.has(p.id) ? { ...p, enabled: validMap.get(p.id) === true && p.enabled } : p
                 );
-                this.storage.savePatches(updatedPatches);
+                const existingGroups = this.storage.getPatchGroups();
+                const updatedGroups = existingGroups.map((group) => ({
+                  ...group,
+                  patches: group.patches.map(
+                    (p) => validMap.has(p.id) ? updatedPatches.find((pp) => pp.id === p.id) : p
+                  )
+                }));
+                this.storage.savePatchGroups(updatedGroups);
               }
             } else {
-              let systemPromptContent = "";
-              if (meta.type === "html") {
-                systemPromptContent = CORE_INSTRUCTIONS + HTML_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
-              } else if (meta.type === "js") {
-                systemPromptContent = CORE_INSTRUCTIONS + JS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
-              } else if (meta.type === "css") {
-                systemPromptContent = CORE_INSTRUCTIONS + CSS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
-              } else {
-                systemPromptContent = CORE_INSTRUCTIONS + `
-Focus on the semantic meaning and structure of the content.
-` + RESPONSE_FORMAT + STRICT_RULES;
-              }
-              const systemPrompt = { role: "system", content: systemPromptContent };
+              let instructions = "";
+              if (meta.type === "html") instructions = HTML_SPECIFIC;
+              else if (meta.type === "js") instructions = JS_SPECIFIC;
+              else if (meta.type === "css") instructions = CSS_SPECIFIC;
+              else instructions = "Focus on the semantic meaning and structure of the content.";
+              const systemPrompt = {
+                role: "system",
+                content: `${CORE_INSTRUCTIONS} ${instructions} ${RESPONSE_FORMAT} ${STRICT_RULES}`
+              };
               const userPrompt = {
                 role: "user",
                 content: `[FILE: ${fileId}]
@@ -787,17 +774,6 @@ ${meta.content}`
       return { originals, index: semanticIndex };
     }
   };
-
-  // src/utils/dedent.ts
-  function dedent(strings, ...values) {
-    let full = String.raw({ raw: strings }, ...values);
-    full = full.replace(/^\n|\n\s*$/g, "");
-    const indent = full.match(/^[ \t]*(?=\S)/gm)?.reduce(
-      (min, line) => Math.min(min, line.length),
-      Infinity
-    ) || 0;
-    return indent > 0 ? full.replace(new RegExp(`^[ \\t]{${indent}}`, "gm"), "") : full;
-  }
 
   // src/core/Engine.ts
   var HypoAssistantEngine = class {
@@ -840,16 +816,15 @@ ${meta.content}`
       this.storage.saveDiagnostics(diagnostics);
       console.groupEnd();
       return {
-        message: groupTitle,
-        patches: storedPatches,
-        groupTitle
+        groupTitle,
+        patches: storedPatches
       };
     }
     async indexSources(progress, signal) {
       return await new SemanticIndexer(this.config, this.storage, this.llm).ensureIndex(progress, signal);
     }
     async findRelevantFiles(userQuery, semanticIndex, progress, signal) {
-      const activePatches = this.storage.getPatches().filter((p) => p.enabled);
+      const activePatches = this.storage.getPatchGroups().flatMap((g) => g.patches).filter((p) => p.enabled);
       const activePatchesSummary = activePatches.length > 0 ? activePatches.map((p) => `- ${p.title}`).join("\n") : "None";
       const relevancePrompt = {
         role: "system",
@@ -881,7 +856,7 @@ ${meta.content}`
 ${src.content}
 [/FILE]` : "";
       }).filter(Boolean).join("\n\n");
-      const activePatches = this.storage.getPatches().filter((p) => p.enabled);
+      const activePatches = this.storage.getPatchGroups().flatMap((g) => g.patches).filter((p) => p.enabled);
       const activePatchesSummary = activePatches.length > 0 ? activePatches.map((p) => `- ${p.title}`).join("\n") : "None";
       const patchPrompt = {
         role: "system",
@@ -1042,6 +1017,9 @@ User request: ${userQuery}`
         if (toolCall) {
           storedPatches.push({
             id: crypto.randomUUID(),
+            // ❗ requestId будет установлен позже в UI.ts
+            requestId: "",
+            // placeholder
             toolCall,
             dependsOn: relevantIds,
             enabled: false,
@@ -1392,62 +1370,141 @@ User request: ${userQuery}`
 
   // src/ui/components/PatchListView.ts
   var PatchListView = class {
-    constructor(chatPanel, patchItemTemplate, patchWidgetTemplate, storage, onFrozen) {
+    constructor(chatPanel, patchItemTemplate, patchWidgetTemplate, storage, onTerminate) {
       this.chatPanel = chatPanel;
       this.patchItemTemplate = patchItemTemplate;
       this.patchWidgetTemplate = patchWidgetTemplate;
       this.storage = storage;
-      this.onFrozen = onFrozen;
+      this.onTerminate = onTerminate;
+      this.groupHeaderTemplate = document.getElementById("hypo-patch-group-header-template");
+      this.groupTemplate = document.getElementById("hypo-patch-group-template");
     }
+    groupHeaderTemplate;
+    groupTemplate;
+    tempPatchStates = /* @__PURE__ */ new Map();
+    appliedOnce = /* @__PURE__ */ new Set();
     show() {
-      const frag = document.importNode(this.patchWidgetTemplate.content, true);
-      const widget = frag.firstElementChild;
-      if (!widget) throw new Error("Patch widget root element missing");
+      const groups = this.storage.getPatchGroups();
+      this.tempPatchStates.clear();
+      groups.forEach((g) => {
+        g.patches.forEach((p) => {
+          this.tempPatchStates.set(p.id, p.enabled);
+          if (p.enabled) {
+            this.appliedOnce.add(p.id);
+          }
+        });
+      });
+      const widget = document.importNode(this.patchWidgetTemplate.content, true).firstElementChild;
+      if (!widget) throw new Error("Patch widget template is invalid");
       const listContainer = widget.querySelector(".hypo-patch-list");
       const emptyEl = widget.querySelector(".hypo-patch-empty");
       const saveBtn = widget.querySelector(".hypo-patch-save-btn");
-      const patches = this.storage.getPatches();
-      if (patches.length === 0) {
-        emptyEl.style.display = "block";
-        saveBtn.style.display = "none";
-      } else {
-        emptyEl.style.display = "none";
-        saveBtn.style.display = "block";
-        patches.forEach((p) => {
-          const itemFrag = document.importNode(this.patchItemTemplate.content, true);
-          const checkbox = itemFrag.querySelector("input");
-          const titleSpan = itemFrag.querySelector("span");
-          const dateEl = itemFrag.querySelector("small");
-          checkbox.dataset.id = p.id;
-          checkbox.checked = p.enabled;
-          titleSpan.textContent = p.title;
-          titleSpan.title = p.id;
-          dateEl.textContent = new Date(p.createdAt).toLocaleDateString();
-          checkbox.addEventListener("change", () => {
-            const id = checkbox.dataset.id;
-            if (!id) return;
-            const current = this.storage.getPatches();
-            const updated = current.map((pp) => pp.id === id ? { ...pp, enabled: checkbox.checked } : pp);
-            this.storage.savePatches(updated);
-            if (checkbox.checked) {
-              const patch = updated.find((pp) => pp.id === id);
-              PatchManager.applyToolCalls([patch.toolCall]);
-            }
+      const hasPatches = groups.some((g) => g.patches.length > 0);
+      emptyEl.style.display = hasPatches ? "none" : "block";
+      saveBtn.style.display = hasPatches ? "block" : "none";
+      if (hasPatches) {
+        groups.forEach((group) => {
+          const groupEl = document.importNode(this.groupTemplate.content, true).firstElementChild;
+          const itemsContainer = groupEl.querySelector(".patch-items");
+          const headerEl = document.importNode(this.groupHeaderTemplate.content, true).firstElementChild;
+          const triStateIcon = headerEl.querySelector(".tri-state-icon");
+          const groupTitleEl = headerEl.querySelector(".group-title");
+          const toggleBtn = headerEl.querySelector(".toggle-group-btn");
+          groupTitleEl.textContent = group.groupTitle;
+          const updateIcon = () => {
+            const enabled = group.patches.filter((p) => this.tempPatchStates.get(p.id) ?? false).length;
+            const total = group.patches.length;
+            triStateIcon.className = "tri-state-icon" + (enabled === 0 ? "" : enabled === total ? " checked" : " partial");
+          };
+          updateIcon();
+          headerEl.addEventListener("click", (e) => {
+            if (e.target.closest(".toggle-group-btn")) return;
+            e.preventDefault();
+            const enabled = group.patches.filter((p) => this.tempPatchStates.get(p.id) ?? false).length;
+            const total = group.patches.length;
+            const target = enabled === total ? false : true;
+            group.patches.forEach((p) => {
+              const wasEnabled = this.tempPatchStates.get(p.id) ?? false;
+              if (wasEnabled !== target) {
+                this.tempPatchStates.set(p.id, target);
+                if (target && !this.appliedOnce.has(p.id)) {
+                  PatchManager.applyToolCalls([p.toolCall]);
+                  this.appliedOnce.add(p.id);
+                }
+              }
+            });
+            itemsContainer.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+              const id = cb.dataset.id;
+              if (id) cb.checked = target;
+            });
+            updateIcon();
           });
-          listContainer.appendChild(itemFrag);
+          toggleBtn.addEventListener("click", () => {
+            groupEl.classList.toggle("expanded");
+            itemsContainer.style.display = groupEl.classList.contains("expanded") ? "block" : "none";
+          });
+          groupEl.insertBefore(headerEl, itemsContainer);
+          group.patches.forEach((p) => {
+            const item = document.importNode(this.patchItemTemplate.content, true).firstElementChild;
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            const titleSpan = item.querySelector("span");
+            const dateEl = item.querySelector("small");
+            checkbox.dataset.id = p.id;
+            const current = this.tempPatchStates.get(p.id) ?? p.enabled;
+            checkbox.checked = current;
+            titleSpan.textContent = p.title;
+            dateEl.textContent = new Date(p.createdAt).toLocaleDateString();
+            checkbox.addEventListener("change", () => {
+              const id = checkbox.dataset.id;
+              if (!id) return;
+              const enabled = checkbox.checked;
+              const wasEnabled = this.tempPatchStates.get(id) ?? false;
+              if (enabled !== wasEnabled) {
+                this.tempPatchStates.set(id, enabled);
+                if (enabled && !wasEnabled && !this.appliedOnce.has(id)) {
+                  const patch = group.patches.find((pp) => pp.id === id);
+                  if (patch) {
+                    PatchManager.applyToolCalls([patch.toolCall]);
+                    this.appliedOnce.add(id);
+                  }
+                }
+              }
+              updateIcon();
+            });
+            itemsContainer.appendChild(item);
+          });
+          listContainer.appendChild(groupEl);
         });
       }
+      const save = () => {
+        const currentGroups = this.storage.getPatchGroups();
+        const knownPatchIds = /* @__PURE__ */ new Set();
+        groups.forEach((g) => g.patches.forEach((p) => knownPatchIds.add(p.id)));
+        const mergedGroups = currentGroups.map((g) => ({
+          ...g,
+          patches: g.patches.map(
+            (p) => knownPatchIds.has(p.id) ? { ...p, enabled: this.tempPatchStates.get(p.id) ?? p.enabled } : p
+          )
+        }));
+        this.storage.savePatchGroups(mergedGroups);
+      };
       const freeze = () => {
-        widget.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-          cb.disabled = true;
-        });
+        widget.querySelectorAll('input[type="checkbox"]').forEach((el) => el.disabled = true);
+        widget.querySelectorAll(".toggle-group-btn").forEach((el) => el.style.pointerEvents = "none");
         saveBtn.remove();
         widget.classList.add("frozen");
-        this.onFrozen?.();
       };
-      saveBtn.addEventListener("click", freeze);
+      saveBtn.addEventListener("click", () => {
+        save();
+        freeze();
+        this.onTerminate?.("save");
+      });
       this.chatPanel.addMessageWidget(widget, "assist");
-      return { freeze };
+      return {
+        freeze: () => {
+          freeze();
+        }
+      };
     }
   };
 
@@ -1474,7 +1531,7 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
   };
 
   // src/ui/index.html
-  var ui_default = '<!-- \u{1F99B} \u0412\u0441\u044F UI-\u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 \u2014 \u043E\u0431\u0451\u0440\u043D\u0443\u0442\u0430 \u0434\u043B\u044F \u0438\u0437\u043E\u043B\u044F\u0446\u0438\u0438 \u0441\u0442\u0438\u043B\u0435\u0439 -->\r\n<div id="hypo-assistant-core">\r\n\r\n    <!-- \u{1F518} ToggleButton.ts \u2014 \u043F\u043B\u0430\u0432\u0430\u044E\u0449\u0430\u044F \u043A\u043D\u043E\u043F\u043A\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u044F -->\r\n    <button id="hypo-toggle" aria-label="Open HypoAssistant">\u{1F99B}</button>\r\n\r\n    <!-- \u{1F5A5}\uFE0F HypoAssistantUI.ts (\u043E\u0440\u043A\u0435\u0441\u0442\u0440\u0430\u0442\u043E\u0440) \u2014 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u043C/\u0441\u043A\u0440\u044B\u0442\u0438\u0435\u043C \u043F\u0430\u043D\u0435\u043B\u0438 -->\r\n    <div id="hypo-panel" style="display: none;">\r\n\r\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043A\u043E\u043D\u0442\u0435\u0439\u043D\u0435\u0440 \u0434\u043B\u044F \u0432\u0441\u0435\u0445 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 (user/assist), \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u0438 \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\r\n        <div class="hypo-header">\r\n            <div class="hypo-title">\u{1F99B} <span>HypoAssistant v1.1</span></div>\r\n            <!-- \u{1F518} ToggleButton.ts (\u0432\u0442\u043E\u0440\u0430\u044F \u0440\u043E\u043B\u044C) \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 \u0441\u0432\u043E\u0440\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F \u043F\u0430\u043D\u0435\u043B\u0438 -->\r\n            <button id="hypo-collapse" aria-label="Collapse panel">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <polyline points="9 18 15 12 9 6"></polyline>\r\n                </svg>\r\n            </button>\r\n        </div>\r\n\r\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0435 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0447\u0430\u0442\u0430 -->\r\n        <div id="hypo-chat"></div>\r\n\r\n        <!-- \u270D\uFE0F ChatPanel.ts \u2014 \u043D\u043E \u043E\u0431\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 HypoAssistantUI \u0447\u0435\u0440\u0435\u0437 sendBtn.onclick -->\r\n        <div class="hypo-input-area">\r\n            <input type="text" id="hypo-input-field" placeholder="Describe change..." />\r\n            <button id="hypo-send" aria-label="Send">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <line x1="22" y1="2" x2="11" y2="13"/>\r\n                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>\r\n                </svg>\r\n            </button>\r\n            <template id="hypo-cancel-icon-template">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <line x1="18" y1="6" x2="6" y2="18"></line>\r\n                    <line x1="6" y1="6" x2="18" y2="18"></line>\r\n                </svg>\r\n            </template>\r\n        </div>\r\n\r\n        <!-- \u{1F6E0}\uFE0F HypoAssistantUI.ts \u2014 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F -->\r\n        <div class="hypo-actions-grid">\r\n            <button id="hypo-export">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>\r\n                    <polyline points="7 10 12 15 17 10"></polyline>\r\n                    <line x1="12" y1="15" x2="12" y2="3"></line>\r\n                </svg>\r\n                Export\r\n            </button>\r\n            <button id="hypo-patch-manager">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(45 12 12)" />\r\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(-45 12 12)" />\r\n                </svg>\r\n                Patches\r\n            </button>\r\n            <button id="hypo-settings">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <circle cx="12" cy="12" r="3"></circle>\r\n                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51-1.65 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1.65 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>\r\n                </svg>\r\n                Settings\r\n            </button>\r\n            <button id="hypo-reload">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <polyline points="23 4 23 10 17 10"></polyline>\r\n                    <polyline points="1 20 1 14 7 14"></polyline>\r\n                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>\r\n                </svg>\r\n                Reload\r\n            </button>\r\n        </div>\r\n\r\n    </div> <!-- /#hypo-panel -->\r\n\r\n\r\n    <!-- \u{1F9E9} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\r\n    <template id="hypo-patch-widget-template">\r\n        <div class="ha-widget">\r\n            <div class="ha-widget-header">\u{1F9E9} Active patches</div>\r\n            <div class="hypo-patch-list"></div>\r\n            <p class="hypo-patch-empty ha-hint" style="display: none;">\r\n                No patches yet.\r\n            </p>\r\n            <button class="ha-btn ha-btn--primary ha-btn--full hypo-patch-save-btn">\r\n                \u2705 Save & Freeze\r\n            </button>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u{1F4E6} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0434\u043B\u044F \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043E\u0434\u043D\u043E\u0433\u043E \u043F\u0430\u0442\u0447\u0430 -->\r\n    <template id="hypo-patch-item-template">\r\n        <div class="hypo-patch-item">\r\n            <label>\r\n                <input type="checkbox" />\r\n                <span></span>\r\n            </label>\r\n            <small></small>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u{1F552} ProgressView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 -->\r\n    <template id="hypo-progress-widget-template">\r\n        <div class="ha-widget">\r\n            <div class="ha-widget-header">\u{1F552} In progress</div>\r\n            <div class="progress-tree-lines"></div>\r\n            <p class="ha-hint">Estimating time for each step...</p>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u{1F552} ProgressView.ts \u2014 \u0441\u0442\u0440\u043E\u043A\u0430 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 -->\r\n    <template id="hypo-progress-line-template">\r\n        <div class="progress-line">\r\n            <span class="tree-skeleton"></span>\r\n            <span class="action-text"></span>\r\n            <span class="action-timer"></span>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u2699\uFE0F ConfigView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A -->\r\n    <template id="hypo-config-widget-template">\r\n        <div class="ha-widget">\r\n            <div class="ha-widget-header">\u2699\uFE0F LLM Settings</div>\r\n            <div class="ha-input-group">\r\n                <input class="ha-input" type="text" name="apiEndpoint" placeholder=" " />\r\n                <label class="ha-input-label">API Endpoint</label>\r\n            </div>\r\n            <div class="ha-input-group">\r\n                <input class="ha-input" type="password" name="apiKey" autocomplete="off" placeholder=" " />\r\n                <label class="ha-input-label">API Key</label>\r\n            </div>\r\n            <div class="ha-input-group">\r\n                <input class="ha-input" type="text" name="model" placeholder=" " />\r\n                <label class="ha-input-label">Model</label>\r\n            </div>\r\n            <button class="ha-btn ha-btn--primary ha-btn--full hypo-config-save-btn">\r\n                \u2705 Save\r\n            </button>\r\n            <p class="ha-hint">Changes take effect immediately. API key is stored only in your browser.</p>\r\n        </div>\r\n    </template>\r\n\r\n</div>';
+  var ui_default = '<!-- \u{1F99B} \u0412\u0441\u044F UI-\u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 \u2014 \u043E\u0431\u0451\u0440\u043D\u0443\u0442\u0430 \u0434\u043B\u044F \u0438\u0437\u043E\u043B\u044F\u0446\u0438\u0438 \u0441\u0442\u0438\u043B\u0435\u0439 -->\r\n<div id="hypo-assistant-core">\r\n\r\n    <!-- \u{1F518} ToggleButton.ts \u2014 \u043F\u043B\u0430\u0432\u0430\u044E\u0449\u0430\u044F \u043A\u043D\u043E\u043F\u043A\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u044F -->\r\n    <button id="hypo-toggle" aria-label="Open HypoAssistant">\u{1F99B}</button>\r\n\r\n    <!-- \u{1F5A5}\uFE0F HypoAssistantUI.ts (\u043E\u0440\u043A\u0435\u0441\u0442\u0440\u0430\u0442\u043E\u0440) \u2014 \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442 \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u0435\u043C/\u0441\u043A\u0440\u044B\u0442\u0438\u0435\u043C \u043F\u0430\u043D\u0435\u043B\u0438 -->\r\n    <div id="hypo-panel" style="display: none;">\r\n\r\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043A\u043E\u043D\u0442\u0435\u0439\u043D\u0435\u0440 \u0434\u043B\u044F \u0432\u0441\u0435\u0445 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0439 (user/assist), \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 \u0438 \u0441\u043F\u0438\u0441\u043A\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\r\n        <div class="hypo-header">\r\n            <div class="hypo-title">\u{1F99B} <span>HypoAssistant v1.1</span></div>\r\n            <!-- \u{1F518} ToggleButton.ts (\u0432\u0442\u043E\u0440\u0430\u044F \u0440\u043E\u043B\u044C) \u2014 \u043A\u043D\u043E\u043F\u043A\u0430 \u0441\u0432\u043E\u0440\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F \u043F\u0430\u043D\u0435\u043B\u0438 -->\r\n            <button id="hypo-collapse" aria-label="Collapse panel">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <polyline points="9 18 15 12 9 6"></polyline>\r\n                </svg>\r\n            </button>\r\n        </div>\r\n\r\n        <!-- \u{1F4AC} ChatPanel.ts \u2014 \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0435 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0447\u0430\u0442\u0430 -->\r\n        <div id="hypo-chat"></div>\r\n\r\n        <!-- \u270D\uFE0F ChatPanel.ts \u2014 \u043D\u043E \u043E\u0431\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 HypoAssistantUI \u0447\u0435\u0440\u0435\u0437 sendBtn.onclick -->\r\n        <div class="hypo-input-area">\r\n            <input type="text" id="hypo-input-field" placeholder="Describe change..." />\r\n            <button id="hypo-send" aria-label="Send">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <line x1="22" y1="2" x2="11" y2="13"/>\r\n                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>\r\n                </svg>\r\n            </button>\r\n            <template id="hypo-cancel-icon-template">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <line x1="18" y1="6" x2="6" y2="18"></line>\r\n                    <line x1="6" y1="6" x2="18" y2="18"></line>\r\n                </svg>\r\n            </template>\r\n        </div>\r\n\r\n        <!-- \u{1F6E0}\uFE0F HypoAssistantUI.ts \u2014 \u0433\u043B\u043E\u0431\u0430\u043B\u044C\u043D\u044B\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F -->\r\n        <div class="hypo-actions-grid">\r\n            <button id="hypo-export">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>\r\n                    <polyline points="7 10 12 15 17 10"></polyline>\r\n                    <line x1="12" y1="15" x2="12" y2="3"></line>\r\n                </svg>\r\n                Export\r\n            </button>\r\n            <button id="hypo-patch-manager">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(45 12 12)" />\r\n                    <rect x="2" y="7.5" width="20" height="9" rx="3" transform="rotate(-45 12 12)" />\r\n                </svg>\r\n                Patches\r\n            </button>\r\n            <button id="hypo-settings">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <circle cx="12" cy="12" r="3"></circle>\r\n                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51-1.65 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1.65 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>\r\n                </svg>\r\n                Settings\r\n            </button>\r\n            <button id="hypo-reload">\r\n                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">\r\n                    <polyline points="23 4 23 10 17 10"></polyline>\r\n                    <polyline points="1 20 1 14 7 14"></polyline>\r\n                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>\r\n                </svg>\r\n                Reload\r\n            </button>\r\n        </div>\r\n\r\n    </div> <!-- /#hypo-panel -->\r\n\r\n\r\n    <!-- \u{1F9E9} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043F\u0430\u0442\u0447\u0435\u0439 -->\r\n    <template id="hypo-patch-widget-template">\r\n        <div class="ha-widget">\r\n            <div class="ha-widget-header">\u{1F9E9} Active patches</div>\r\n            <div class="hypo-patch-list"></div>\r\n            <p class="hypo-patch-empty ha-hint" style="display: none;">\r\n                No patches yet.\r\n            </p>\r\n            <button class="ha-btn ha-btn--primary ha-btn--full hypo-patch-save-btn">\r\n                \u2705 Save\r\n            </button>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u{1F4E6} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0434\u043B\u044F \u043E\u0442\u043E\u0431\u0440\u0430\u0436\u0435\u043D\u0438\u044F \u043E\u0434\u043D\u043E\u0433\u043E \u043F\u0430\u0442\u0447\u0430 -->\r\n    <template id="hypo-patch-item-template">\r\n        <div class="hypo-patch-item">\r\n            <label>\r\n                <input type="checkbox" />\r\n                <span></span>\r\n            </label>\r\n            <small></small>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u{1F4E6} PatchListView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043A\u0430 \u0433\u0440\u0443\u043F\u043F\u044B -->\r\n    <template id="hypo-patch-group-header-template">\r\n        <div class="patch-group-header">\r\n            <label class="tri-state-checkbox">\r\n                <input type="checkbox" />\r\n                <span class="tri-state-icon"></span>\r\n                <span class="group-title"></span>\r\n                <button class="toggle-group-btn" aria-label="Toggle group">\r\n                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">\r\n                        <polyline points="6 9 12 15 18 9"></polyline>\r\n                    </svg>\r\n                </button>\r\n            </label>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u{1F4E6} PatchListView.ts \u2014 \u043E\u0431\u0451\u0440\u0442\u043A\u0430 \u0434\u043B\u044F \u0433\u0440\u0443\u043F\u043F\u044B -->\r\n    <template id="hypo-patch-group-template">\r\n        <div class="patch-group">\r\n            <!-- \u0437\u0434\u0435\u0441\u044C \u0431\u0443\u0434\u0435\u0442 header \u0438\u0437 hypo-patch-group-header-template -->\r\n            <div class="patch-items" style="display: none;"></div>\r\n        </div>\r\n    </template>\r\n\r\n\r\n    <!-- \u{1F552} ProgressView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 -->\r\n    <template id="hypo-progress-widget-template">\r\n        <div class="ha-widget">\r\n            <div class="ha-widget-header">\u{1F552} In progress</div>\r\n            <div class="progress-tree-lines"></div>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u{1F552} ProgressView.ts \u2014 \u0441\u0442\u0440\u043E\u043A\u0430 \u043F\u0440\u043E\u0433\u0440\u0435\u0441\u0441\u0430 -->\r\n    <template id="hypo-progress-line-template">\r\n        <div class="progress-line">\r\n            <span class="tree-skeleton"></span>\r\n            <span class="action-text"></span>\r\n            <span class="action-timer"></span>\r\n        </div>\r\n    </template>\r\n\r\n    <!-- \u2699\uFE0F ConfigView.ts \u2014 \u0448\u0430\u0431\u043B\u043E\u043D \u0432\u0438\u0434\u0436\u0435\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A -->\r\n    <template id="hypo-config-widget-template">\r\n        <div class="ha-widget">\r\n            <div class="ha-widget-header">\u2699\uFE0F LLM Settings</div>\r\n            <div class="ha-input-group">\r\n                <input class="ha-input" type="text" name="apiEndpoint" placeholder=" " />\r\n                <label class="ha-input-label">API Endpoint</label>\r\n            </div>\r\n            <div class="ha-input-group">\r\n                <input class="ha-input" type="password" name="apiKey" autocomplete="off" placeholder=" " />\r\n                <label class="ha-input-label">API Key</label>\r\n            </div>\r\n            <div class="ha-input-group">\r\n                <input class="ha-input" type="text" name="model" placeholder=" " />\r\n                <label class="ha-input-label">Model</label>\r\n            </div>\r\n            <button class="ha-btn ha-btn--primary ha-btn--full hypo-config-save-btn">\r\n                \u2705 Save\r\n            </button>\r\n            <p class="ha-hint">Changes take effect immediately. API key is stored only in your browser.</p>\r\n        </div>\r\n    </template>\r\n\r\n</div>';
 
   // src/ui/styles.css
   var styles_default = `/* === HypoAssistant UI \u2013 \u043F\u043E\u043B\u043D\u044B\u0439 CSS === */\r
@@ -1863,6 +1920,101 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
     margin-top: var(--ha-space-2);\r
 }\r
 \r
+#hypo-assistant-core .patch-group {\r
+    margin-bottom: var(--ha-space-4);\r
+    border-left: 2px solid var(--ha-color-border);\r
+    padding-left: var(--ha-space-3);\r
+}\r
+#hypo-assistant-core .group-header {\r
+    font-weight: 600;\r
+    color: var(--ha-color-text-primary);\r
+    margin-bottom: var(--ha-space-2);\r
+    font-size: 14px;\r
+}\r
+\r
+/* \u0413\u0440\u0443\u043F\u043F\u044B \u043F\u0430\u0442\u0447\u0435\u0439 */\r
+#hypo-assistant-core .patch-group {\r
+    margin-bottom: var(--ha-space-4);\r
+    border-left: 2px solid var(--ha-color-border);\r
+    padding-left: var(--ha-space-3);\r
+}\r
+\r
+#hypo-assistant-core .patch-group-header {\r
+    display: flex;\r
+    align-items: center;\r
+    margin-bottom: var(--ha-space-2);\r
+}\r
+\r
+#hypo-assistant-core .tri-state-checkbox {\r
+    display: flex;\r
+    align-items: center;\r
+    gap: var(--ha-space-2);\r
+    cursor: pointer;\r
+    flex: 1;\r
+}\r
+\r
+#hypo-assistant-core .tri-state-checkbox input[type="checkbox"] {\r
+    display: none; /* \u0441\u043A\u0440\u044B\u0432\u0430\u0435\u043C \u043D\u0430\u0441\u0442\u043E\u044F\u0449\u0438\u0439 \u0447\u0435\u043A\u0431\u043E\u043A\u0441 */\r
+}\r
+\r
+#hypo-assistant-core .tri-state-icon {\r
+    width: 16px;\r
+    height: 16px;\r
+    border: 1px solid var(--ha-color-border);\r
+    border-radius: 2px;\r
+    display: flex;\r
+    align-items: center;\r
+    justify-content: center;\r
+    background: var(--ha-color-bg-input);\r
+}\r
+\r
+#hypo-assistant-core .tri-state-icon::after {\r
+    content: "";\r
+    display: block;\r
+    width: 8px;\r
+    height: 8px;\r
+    background: var(--ha-color-primary);\r
+    opacity: 0;\r
+}\r
+\r
+#hypo-assistant-core .tri-state-icon.checked::after {\r
+    opacity: 1;\r
+}\r
+\r
+#hypo-assistant-core .tri-state-icon.partial::after {\r
+    opacity: 1;\r
+    background: var(--ha-color-text-secondary);\r
+    width: 4px;\r
+    height: 4px;\r
+    border-radius: 50%;\r
+}\r
+\r
+#hypo-assistant-core .group-title {\r
+    font-weight: 600;\r
+    color: var(--ha-color-text-primary);\r
+    font-size: 14px;\r
+    flex: 1;\r
+}\r
+\r
+#hypo-assistant-core .toggle-group-btn {\r
+    background: none;\r
+    border: none;\r
+    color: var(--ha-color-text-secondary);\r
+    cursor: pointer;\r
+    width: 24px;\r
+    height: 24px;\r
+    display: flex;\r
+    align-items: center;\r
+    justify-content: center;\r
+    padding: 0;\r
+    transform: rotate(0deg);\r
+    transition: transform 0.2s ease;\r
+}\r
+\r
+#hypo-assistant-core .patch-group.expanded .toggle-group-btn {\r
+    transform: rotate(180deg);\r
+}\r
+\r
 /* \u041F\u0440\u043E\u0433\u0440\u0435\u0441\u0441-\u0441\u0442\u0440\u043E\u043A\u0438 (\u0432\u043D\u0443\u0442\u0440\u0438 ha-widget) */\r
 #hypo-assistant-core .progress-tree-lines {\r
     font-family: monospace;\r
@@ -2044,11 +2196,13 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
         patchItemTpl,
         document.getElementById("hypo-patch-widget-template"),
         this.storage,
-        () => {
-          this.chatPanel.addMessage(
-            "\u2705 Patch settings saved. Changes will persist after reload.",
-            "assist"
-          );
+        (reason) => {
+          if (reason === "save") {
+            this.chatPanel.addMessage(
+              "\u2705 Patch settings saved. Changes will persist after reload.",
+              "assist"
+            );
+          }
         }
       );
       document.getElementById("hypo-patch-manager").onclick = () => {
@@ -2101,10 +2255,20 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
           setSendButtonState(false);
           this.chatPanel.addMessage(result.groupTitle, "assist");
           if (confirm("Apply patch?")) {
-            const existing = this.storage.getPatches();
-            const updated = [...existing, ...result.patches];
-            PatchManager.applyToolCalls(result.patches.map((p) => p.toolCall));
-            this.storage.savePatches(updated);
+            const requestId = crypto.randomUUID();
+            const newGroup = {
+              requestId,
+              userQuery: query,
+              groupTitle: result.groupTitle,
+              patches: result.patches.map((p) => ({
+                ...p,
+                requestId
+                // ← используем переменную, а не newGroup.requestId
+              }))
+            };
+            const existingGroups = this.storage.getPatchGroups();
+            this.storage.savePatchGroups([...existingGroups, newGroup]);
+            PatchManager.applyToolCalls(newGroup.patches.map((p) => p.toolCall));
             this.chatPanel.addMessage('\u2705 Applied. Enable in "\u{1F9E9} Patches" to persist.', "assist");
           }
         } catch (err) {
@@ -2150,8 +2314,8 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
     const storage = new StorageAdapter();
     const llm = new LLMClient(config, storage);
     const engine = new HypoAssistantEngine(config, storage, llm);
-    const savedPatches = storage.getPatches();
-    const enabledPatches = savedPatches.filter((p) => p.enabled);
+    const allPatches = storage.getPatchGroups().flatMap((group) => group.patches);
+    const enabledPatches = allPatches.filter((p) => p.enabled);
     if (enabledPatches.length > 0) {
       PatchManager.applyToolCalls(enabledPatches.map((p) => p.toolCall));
     }

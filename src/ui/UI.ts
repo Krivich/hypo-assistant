@@ -1,4 +1,4 @@
-import {Freezable, PatchResult} from '../types.js';
+import {PatchGroup, PatchResult, Terminable} from '../types.js';
 import { PatchManager } from '../core/PatchManager.js';
 import { StorageAdapter } from '../config/StorageAdapter.js';
 import { AdaptiveProgressObserver } from '../utils/AdaptiveProgressObserver.js';
@@ -22,8 +22,8 @@ export class HypoAssistantUI {
     private chatPanel!: ChatPanel;
     private progressView: ProgressView | null = null;
 
-    private activeConfigWidget: Freezable  | null = null;
-    private activePatchWidget: Freezable | null = null;
+    private activeConfigWidget: Terminable  | null = null;
+    private activePatchWidget: Terminable | null = null;
 
     constructor(
         private onUserRequest: (
@@ -126,11 +126,13 @@ export class HypoAssistantUI {
             patchItemTpl,
             document.getElementById('hypo-patch-widget-template') as HTMLTemplateElement,
             this.storage,
-            () => {
-                this.chatPanel.addMessage(
-                    '✅ Patch settings saved. Changes will persist after reload.',
-                    'assist'
-                );
+            (reason) => {
+                if (reason === 'save') {
+                    this.chatPanel.addMessage(
+                        '✅ Patch settings saved. Changes will persist after reload.',
+                        'assist'
+                    );
+                }
             }
         );
 
@@ -193,15 +195,26 @@ export class HypoAssistantUI {
 
             try {
                 const result = await this.onUserRequest(query, progress, this.abortController.signal);
-                this.progressView?.freeze(); // фиксируем финальное состояние
+                this.progressView?.freeze();
                 setSendButtonState(false);
-
                 this.chatPanel.addMessage(result.groupTitle, 'assist');
+
                 if (confirm('Apply patch?')) {
-                    const existing = this.storage.getPatches();
-                    const updated = [...existing, ...result.patches];
-                    PatchManager.applyToolCalls(result.patches.map(p => p.toolCall));
-                    this.storage.savePatches(updated);
+                    const requestId = crypto.randomUUID(); // ← сначала создаём ID
+                    const newGroup: PatchGroup = {
+                        requestId,
+                        userQuery: query,
+                        groupTitle: result.groupTitle,
+                        patches: result.patches.map(p => ({
+                            ...p,
+                            requestId // ← используем переменную, а не newGroup.requestId
+                        }))
+                    };
+
+                    const existingGroups = this.storage.getPatchGroups();
+                    this.storage.savePatchGroups([...existingGroups, newGroup]);
+
+                    PatchManager.applyToolCalls(newGroup.patches.map(p => p.toolCall));
                     this.chatPanel.addMessage('✅ Applied. Enable in "🧩 Patches" to persist.', 'assist');
                 }
             } catch (err) {

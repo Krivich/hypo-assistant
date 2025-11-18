@@ -1,3 +1,4 @@
+// src/core/SemanticIndexer.ts
 // ТЕЗИС: Индекс строится только для изменённых или неиндексированных файлов — оптимизация скорости.
 // ТЕЗИС: Неудачная индексация удаляет запись — мы не храним фолбэки (они вводят в заблуждение).
 // ТЕЗИС: При изменении чанка — валидация патчей делегируется LLM, а не жёстким правилам.
@@ -8,6 +9,7 @@ import { StorageAdapter } from '../config/StorageAdapter';
 import { LLMClient } from '../llm/LLMClient';
 import { collectOriginalSources } from './SourceCollector';
 import { AdaptiveProgressObserver } from '../utils/AdaptiveProgressObserver.js';
+import {dedent} from "../utils/dedent";
 
 // === КИРПИЧИ ПРОМПТОВ ===
 
@@ -103,31 +105,31 @@ export class SemanticIndexer {
         } else if (currentMeta.type === 'css') {
             fileSpecificInstructions = CSS_SPECIFIC;
         } else {
-            fileSpecificInstructions = `
-Focus on the semantic meaning and structure of the content.
-`;
+            fileSpecificInstructions = dedent`
+                Focus on the semantic meaning and structure of the content.
+            `;
         }
 
         // Теперь включаем специфичные инструкции внутрь основного validationPrompt
         const validationPrompt: Message = {
             role: 'system',
-            content: `${CORE_INSTRUCTIONS} ${fileSpecificInstructions} ${RESPONSE_FORMAT} ${STRICT_RULES} The content of file "${fileId}" has changed.
-Old index entry:
-${JSON.stringify(oldIndexEntry, null, 2)}
-
-Active patches that depend on this file:
-${JSON.stringify(relevantPatches, null, 2)}
-
-Please:
-1. Generate a new index for this file (same format as before, adhering to the instructions above for ${currentMeta.type} files).
-2. For each patch, decide if it is still valid (can be applied to the new content).
-Return ONLY valid JSON:
-{
-  "newIndex": { "purpose": "...", "key_entities": [...], "dependencies": [...] },
-  "validatedPatches": [
-    { "id": "patch-id-1", "valid": true|false }
-  ]
-}`
+            content: dedent`${CORE_INSTRUCTIONS} ${fileSpecificInstructions} ${RESPONSE_FORMAT} ${STRICT_RULES} The content of file "${fileId}" has changed.
+                Old index entry:
+                ${JSON.stringify(oldIndexEntry, null, 2)}
+                
+                Active patches that depend on this file:
+                ${JSON.stringify(relevantPatches, null, 2)}
+                
+                Please:
+                1. Generate a new index for this file (same format as before, adhering to the instructions above for ${currentMeta.type} files).
+                2. For each patch, decide if it is still valid (can be applied to the new content).
+                Return ONLY valid JSON:
+                {
+                  "newIndex": { "purpose": "...", "key_entities": [...], "dependencies": [...] },
+                  "validatedPatches": [
+                    { "id": "patch-id-1", "valid": true|false }
+                  ]
+                }`
         };
 
         const userPrompt: Message = {
@@ -156,12 +158,10 @@ Return ONLY valid JSON:
         if (!semanticIndex) semanticIndex = {};
 
         const fileIds = Object.keys(originals);
-
-        const indexerFlow = progress.startFlow({steps: fileIds.length});
-
+        const indexerFlow = progress.startFlow({ steps: fileIds.length });
         let needsSave = false;
-        for (let idx = 0; idx < fileIds.length; idx++) {
-            const fileId = fileIds[idx];
+
+        for (const fileId of fileIds) {
             const meta = originals[fileId];
             const stored = semanticIndex[fileId];
             const storedHash = typeof stored === 'object' && stored !== null && 'hash' in stored
@@ -172,7 +172,7 @@ Return ONLY valid JSON:
             if (!stored || storedHash !== meta.hash || isFallbackIndex(stored)) {
                 try {
                     if (stored && storedHash !== meta.hash) {
-                        const allPatches = this.storage.getPatches();
+                        const allPatches = this.storage.getPatchGroups().flatMap(g => g.patches);
                         const relevantPatches = allPatches.filter(p => p.dependsOn.includes(fileId));
                         const result = await this.validateAndReindexChunk(
                             fileId, meta, stored, relevantPatches,
@@ -181,27 +181,31 @@ Return ONLY valid JSON:
                         );
                         semanticIndex[fileId] = { ...result.newIndex, hash: meta.hash };
                         if (result.validatedPatches?.length) {
-                            const patchesMap = new Map(result.validatedPatches.map(v => [v.id, v.valid]));
-                            const updatedPatches = allPatches.map(p => patchesMap.has(p.id)
-                                ? { ...p, enabled: patchesMap.get(p.id) === true && p.enabled }
-                                : p
+                            const validMap = new Map(result.validatedPatches.map(v => [v.id, v.valid]));
+                            const updatedPatches = allPatches.map(p =>
+                                validMap.has(p.id) ? { ...p, enabled: validMap.get(p.id) === true && p.enabled } : p
                             );
-                            this.storage.savePatches(updatedPatches);
+                            // Сохраняем патчи в виде групп — преобразуем обратно
+                            const existingGroups = this.storage.getPatchGroups();
+                            const updatedGroups = existingGroups.map(group => ({
+                                ...group,
+                                patches: group.patches.map(p =>
+                                    validMap.has(p.id) ? updatedPatches.find(pp => pp.id === p.id)! : p
+                                )
+                            }));
+                            this.storage.savePatchGroups(updatedGroups);
                         }
                     } else {
-                        let systemPromptContent = '';
-                        if (meta.type === 'html') {
-                            systemPromptContent = CORE_INSTRUCTIONS + HTML_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
-                        } else if (meta.type === 'js') {
-                            systemPromptContent = CORE_INSTRUCTIONS + JS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
-                        } else if (meta.type === 'css') {
-                            systemPromptContent = CORE_INSTRUCTIONS + CSS_SPECIFIC + RESPONSE_FORMAT + STRICT_RULES;
-                        } else {
-                            systemPromptContent = CORE_INSTRUCTIONS + `
-Focus on the semantic meaning and structure of the content.
-` + RESPONSE_FORMAT + STRICT_RULES;
-                        }
-                        const systemPrompt: Message = { role: 'system', content: systemPromptContent };
+                        let instructions = '';
+                        if (meta.type === 'html') instructions = HTML_SPECIFIC;
+                        else if (meta.type === 'js') instructions = JS_SPECIFIC;
+                        else if (meta.type === 'css') instructions = CSS_SPECIFIC;
+                        else instructions = 'Focus on the semantic meaning and structure of the content.';
+
+                        const systemPrompt: Message = {
+                            role: 'system',
+                            content: `${CORE_INSTRUCTIONS} ${instructions} ${RESPONSE_FORMAT} ${STRICT_RULES}`
+                        };
                         const userPrompt: Message = {
                             role: 'user',
                             content: `[FILE: ${fileId}]\n${meta.content}`

@@ -84,7 +84,7 @@
                 No patches yet.
             </p>
             <button class="ha-btn ha-btn--primary ha-btn--full hypo-patch-save-btn">
-                ✅ Save & Freeze
+                ✅ Save
             </button>
         </div>
     </template>
@@ -99,6 +99,31 @@
             <small></small>
         </div>
     </template>
+
+    <!-- 📦 PatchListView.ts — шаблон заголовка группы -->
+    <template id="hypo-patch-group-header-template">
+        <div class="patch-group-header">
+            <label class="tri-state-checkbox">
+                <input type="checkbox" />
+                <span class="tri-state-icon"></span>
+                <span class="group-title"></span>
+                <button class="toggle-group-btn" aria-label="Toggle group">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+            </label>
+        </div>
+    </template>
+
+    <!-- 📦 PatchListView.ts — обёртка для группы -->
+    <template id="hypo-patch-group-template">
+        <div class="patch-group">
+            <!-- здесь будет header из hypo-patch-group-header-template -->
+            <div class="patch-items" style="display: none;"></div>
+        </div>
+    </template>
+
 
     <!-- 🕒 ProgressView.ts — шаблон виджета прогресса -->
     <template id="hypo-progress-widget-template">

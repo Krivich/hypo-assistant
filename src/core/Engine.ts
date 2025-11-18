@@ -1,26 +1,26 @@
 // src/core/Engine.ts
-import type {ToolCall, StoredPatch, PatchResult, Message, Sources} from '../types';
-import {AppConfig} from '../config/AppConfig';
-import {StorageAdapter} from '../config/StorageAdapter';
-import {LLMClient} from '../llm/LLMClient';
-import {SemanticIndexer} from './SemanticIndexer';
-import {AdaptiveProgressObserver} from '../utils/AdaptiveProgressObserver.js';
-import {dedent} from "../utils/dedent";
+
+import type { ToolCall, StoredPatch, PatchResult, Message, Sources } from '../types';
+import { AppConfig } from '../config/AppConfig';
+import { StorageAdapter } from '../config/StorageAdapter';
+import { LLMClient } from '../llm/LLMClient';
+import { SemanticIndexer } from './SemanticIndexer';
+import { AdaptiveProgressObserver } from '../utils/AdaptiveProgressObserver.js';
+import { dedent } from "../utils/dedent";
 
 export class HypoAssistantEngine {
     constructor(
         private config: AppConfig,
         private storage: StorageAdapter,
         private llm: LLMClient
-    ) {
-    }
+    ) {}
 
     async run(userQuery: string, progress: AdaptiveProgressObserver, signal?: AbortSignal): Promise<PatchResult> {
-        const engineFlow = progress.startFlow({steps: 3, stepTimeMs: 60_000});
+        const engineFlow = progress.startFlow({ steps: 3, stepTimeMs: 60_000 });
 
         // === Шаг 1: Индексирование ===
         engineFlow.startStep('Indexing sources');
-        const {originals, index: semanticIndex} = await this.indexSources(engineFlow, signal);
+        const { originals, index: semanticIndex } = await this.indexSources(engineFlow, signal);
 
         console.group(`[HypoAssistant] 🚀 New request: "${userQuery}"`);
 
@@ -36,7 +36,7 @@ export class HypoAssistantEngine {
 
         // === Шаг 3: Генерация патча ===
         engineFlow.startStep('Patch generation');
-        const {groupTitle, storedPatches} = await this.generatePatches(
+        const { groupTitle, storedPatches } = await this.generatePatches(
             userQuery,
             originals,
             relevantIds,
@@ -48,22 +48,22 @@ export class HypoAssistantEngine {
             throw new Error('No valid patches generated');
         }
 
-        console.log('🏆 Generated group:', {groupTitle, patches: storedPatches});
+        console.log('🏆 Generated group:', { groupTitle, patches: storedPatches });
 
         const diagnostics = this.storage.getDiagnostics();
         diagnostics.runs.push({
             timestamp: new Date().toISOString(),
             phase: 'final_tool_call',
-            data: {groupTitle, patches: storedPatches}
+            data: { groupTitle, patches: storedPatches }
         });
         this.storage.saveDiagnostics(diagnostics);
 
         console.groupEnd();
 
+        // ❗ Возвращаем ТОЛЬКО groupTitle и patches — без message
         return {
-            message: groupTitle,
-            patches: storedPatches,
-            groupTitle
+            groupTitle,
+            patches: storedPatches
         };
     }
 
@@ -81,7 +81,9 @@ export class HypoAssistantEngine {
         progress: AdaptiveProgressObserver,
         signal?: AbortSignal
     ): Promise<string[]> {
-        const activePatches = this.storage.getPatches().filter(p => p.enabled);
+        const activePatches = this.storage.getPatchGroups()
+            .flatMap(g => g.patches)
+            .filter(p => p.enabled);
         const activePatchesSummary = activePatches.length > 0
             ? activePatches.map(p => `- ${p.title}`).join('\n')
             : 'None';
@@ -99,7 +101,7 @@ export class HypoAssistantEngine {
                 
                 Return {"relevant": ["file_id"]}`
         };
-        const userRelevanceMsg: Message = {role: 'user', content: userQuery};
+        const userRelevanceMsg: Message = { role: 'user', content: userQuery };
 
         const relevanceRes = await this.llm.call(
             [relevancePrompt, userRelevanceMsg],
@@ -124,7 +126,9 @@ export class HypoAssistantEngine {
             return src ? `[FILE: ${id}]\n${src.content}\n[/FILE]` : '';
         }).filter(Boolean).join('\n\n');
 
-        const activePatches = this.storage.getPatches().filter(p => p.enabled);
+        const activePatches = this.storage.getPatchGroups()
+            .flatMap(g => g.patches)
+            .filter(p => p.enabled);
         const activePatchesSummary = activePatches.length > 0
             ? activePatches.map(p => `- ${p.title}`).join('\n')
             : 'None';
@@ -229,7 +233,7 @@ export class HypoAssistantEngine {
         const rawPatches = Array.isArray(patchRes.patches) ? patchRes.patches : [patchRes];
         const storedPatches = this.createStoredPatches(rawPatches, relevantIds);
 
-        return {groupTitle, storedPatches};
+        return { groupTitle, storedPatches };
     }
 
     private createStoredPatches(rawPatches: any[], relevantIds: string[]): StoredPatch[] {
@@ -244,12 +248,12 @@ export class HypoAssistantEngine {
             switch (p.tool) {
                 case 'setTextContent':
                     if (p.selector && p.text !== undefined) {
-                        toolCall = {tool: 'setTextContent', selector: p.selector, text: p.text};
+                        toolCall = { tool: 'setTextContent', selector: p.selector, text: p.text };
                     }
                     break;
                 case 'setAttribute':
                     if (p.selector && p.name && p.value !== undefined) {
-                        toolCall = {tool: 'setAttribute', selector: p.selector, name: p.name, value: p.value};
+                        toolCall = { tool: 'setAttribute', selector: p.selector, name: p.name, value: p.value };
                     }
                     break;
                 case 'insertAdjacentHTML':
@@ -267,12 +271,12 @@ export class HypoAssistantEngine {
                     break;
                 case 'addStyleRule':
                     if (p.selector && p.style !== undefined) {
-                        toolCall = {tool: 'addStyleRule', selector: p.selector, style: p.style};
+                        toolCall = { tool: 'addStyleRule', selector: p.selector, style: p.style };
                     }
                     break;
                 case 'removeElement':
                     if (p.selector) {
-                        toolCall = {tool: 'removeElement', selector: p.selector};
+                        toolCall = { tool: 'removeElement', selector: p.selector };
                     }
                     break;
                 case 'wrapElement':
@@ -287,7 +291,7 @@ export class HypoAssistantEngine {
                     break;
                 case 'applyTextPatch':
                     if (p.file && p.from && p.to) {
-                        toolCall = {tool: 'applyTextPatch', file: p.file, from: p.from, to: p.to};
+                        toolCall = { tool: 'applyTextPatch', file: p.file, from: p.from, to: p.to };
                     }
                     break;
             }
@@ -295,6 +299,8 @@ export class HypoAssistantEngine {
             if (toolCall) {
                 storedPatches.push({
                     id: crypto.randomUUID(),
+                    // ❗ requestId будет установлен позже в UI.ts
+                    requestId: '', // placeholder
                     toolCall,
                     dependsOn: relevantIds,
                     enabled: false,

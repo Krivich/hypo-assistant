@@ -384,6 +384,101 @@
     margin-top: var(--ha-space-2);
 }
 
+#hypo-assistant-core .patch-group {
+    margin-bottom: var(--ha-space-4);
+    border-left: 2px solid var(--ha-color-border);
+    padding-left: var(--ha-space-3);
+}
+#hypo-assistant-core .group-header {
+    font-weight: 600;
+    color: var(--ha-color-text-primary);
+    margin-bottom: var(--ha-space-2);
+    font-size: 14px;
+}
+
+/* Группы патчей */
+#hypo-assistant-core .patch-group {
+    margin-bottom: var(--ha-space-4);
+    border-left: 2px solid var(--ha-color-border);
+    padding-left: var(--ha-space-3);
+}
+
+#hypo-assistant-core .patch-group-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--ha-space-2);
+}
+
+#hypo-assistant-core .tri-state-checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-2);
+    cursor: pointer;
+    flex: 1;
+}
+
+#hypo-assistant-core .tri-state-checkbox input[type="checkbox"] {
+    display: none; /* скрываем настоящий чекбокс */
+}
+
+#hypo-assistant-core .tri-state-icon {
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--ha-color-border);
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ha-color-bg-input);
+}
+
+#hypo-assistant-core .tri-state-icon::after {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 8px;
+    background: var(--ha-color-primary);
+    opacity: 0;
+}
+
+#hypo-assistant-core .tri-state-icon.checked::after {
+    opacity: 1;
+}
+
+#hypo-assistant-core .tri-state-icon.partial::after {
+    opacity: 1;
+    background: var(--ha-color-text-secondary);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+}
+
+#hypo-assistant-core .group-title {
+    font-weight: 600;
+    color: var(--ha-color-text-primary);
+    font-size: 14px;
+    flex: 1;
+}
+
+#hypo-assistant-core .toggle-group-btn {
+    background: none;
+    border: none;
+    color: var(--ha-color-text-secondary);
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transform: rotate(0deg);
+    transition: transform 0.2s ease;
+}
+
+#hypo-assistant-core .patch-group.expanded .toggle-group-btn {
+    transform: rotate(180deg);
+}
+
 /* Прогресс-строки (внутри ha-widget) */
 #hypo-assistant-core .progress-tree-lines {
     font-family: monospace;

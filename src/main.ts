@@ -5,7 +5,7 @@ import { LLMClient } from './llm/LLMClient.js';
 import { HypoAssistantEngine } from './core/Engine.js';
 import { HypoAssistantUI } from './ui/UI.js';
 import { PatchManager } from './core/PatchManager.js';
-import type { StoredPatch } from './types.js';
+import type { PatchGroup, StoredPatch } from './types.js';
 
 (async () => {
     'use strict';
@@ -22,9 +22,10 @@ import type { StoredPatch } from './types.js';
     const llm = new LLMClient(config, storage);
     const engine = new HypoAssistantEngine(config, storage, llm);
 
-    // Применяем ТОЛЬКО включённые патчи при загрузке
-    const savedPatches = storage.getPatches();
-    const enabledPatches = savedPatches.filter(p => p.enabled);
+    // 🔁 Применяем ТОЛЬКО включённые патчи при загрузке (из всех групп)
+    const allPatches: StoredPatch[] = storage.getPatchGroups()
+        .flatMap(group => group.patches);
+    const enabledPatches = allPatches.filter(p => p.enabled);
     if (enabledPatches.length > 0) {
         PatchManager.applyToolCalls(enabledPatches.map(p => p.toolCall));
     }

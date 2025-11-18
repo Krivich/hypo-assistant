@@ -1,5 +1,5 @@
 // src/ui/components/ProgressView.ts
-import { Freezable } from '../../types.js';
+import {Terminable} from '../../types.js';
 import { ChatPanel } from './ChatPanel.js';
 
 interface TreeNode {
@@ -11,7 +11,7 @@ interface TreeNode {
     parent: TreeNode | null;
 }
 
-export class ProgressView implements Freezable {
+export class ProgressView implements Terminable {
     private widget: HTMLElement;
     private treeLinesContainer: HTMLElement;
     private lineTemplate: HTMLTemplateElement;
