@@ -1,5 +1,4 @@
 // src/core/Engine.ts
-
 import type { ToolCall, StoredPatch, PatchResult, Message, Sources } from '../types';
 import { AppConfig } from '../config/AppConfig';
 import { StorageAdapter } from '../config/StorageAdapter';
@@ -15,7 +14,12 @@ export class HypoAssistantEngine {
         private llm: LLMClient
     ) {}
 
-    async run(userQuery: string, progress: AdaptiveProgressObserver, signal?: AbortSignal): Promise<PatchResult> {
+    async run(
+        userQuery: string,
+        progress: AdaptiveProgressObserver,
+        signal?: AbortSignal,
+        tempActivePatches?: StoredPatch[]
+    ): Promise<PatchResult> {
         const engineFlow = progress.startFlow({ steps: 3, stepTimeMs: 60_000 });
 
         // === Шаг 1: Индексирование ===
@@ -30,7 +34,8 @@ export class HypoAssistantEngine {
             userQuery,
             semanticIndex,
             engineFlow,
-            signal
+            signal,
+            tempActivePatches
         );
         console.log('📁 Relevant files:', relevantIds);
 
@@ -41,7 +46,8 @@ export class HypoAssistantEngine {
             originals,
             relevantIds,
             engineFlow,
-            signal
+            signal,
+            tempActivePatches
         );
 
         if (storedPatches.length === 0) {
@@ -79,13 +85,20 @@ export class HypoAssistantEngine {
         userQuery: string,
         semanticIndex: Record<string, any>,
         progress: AdaptiveProgressObserver,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        tempActivePatches?: StoredPatch[]
     ): Promise<string[]> {
-        const activePatches = this.storage.getPatchGroups()
+        const persistedActivePatches = this.storage.getPatchGroups()
             .flatMap(g => g.patches)
             .filter(p => p.enabled);
-        const activePatchesSummary = activePatches.length > 0
-            ? activePatches.map(p => `- ${p.title}`).join('\n')
+
+        const allActivePatches = [
+            ...persistedActivePatches,
+            ...(tempActivePatches || [])
+        ];
+
+        const activePatchesSummary = allActivePatches.length > 0
+            ? allActivePatches.map(p => `- ${p.title}`).join('\n')
             : 'None';
 
         const relevancePrompt: Message = {
@@ -101,8 +114,8 @@ export class HypoAssistantEngine {
                 
                 Return {"relevant": ["file_id"]}`
         };
-        const userRelevanceMsg: Message = { role: 'user', content: userQuery };
 
+        const userRelevanceMsg: Message = { role: 'user', content: userQuery };
         const relevanceRes = await this.llm.call(
             [relevancePrompt, userRelevanceMsg],
             'relevance',
@@ -118,19 +131,27 @@ export class HypoAssistantEngine {
         originals: Sources,
         relevantIds: string[],
         progress: AdaptiveProgressObserver,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        tempActivePatches?: StoredPatch[]
     ): Promise<{ groupTitle: string; storedPatches: StoredPatch[] }> {
-
         const contextBlocks = relevantIds.map(id => {
             const src = originals[id];
-            return src ? `[FILE: ${id}]\n${src.content}\n[/FILE]` : '';
+            return src ? dedent`[FILE: ${id}]
+                ${src.content}
+                [/FILE]` : '';
         }).filter(Boolean).join('\n\n');
 
-        const activePatches = this.storage.getPatchGroups()
+        const persistedActivePatches = this.storage.getPatchGroups()
             .flatMap(g => g.patches)
             .filter(p => p.enabled);
-        const activePatchesSummary = activePatches.length > 0
-            ? activePatches.map(p => `- ${p.title}`).join('\n')
+
+        const allActivePatches = [
+            ...persistedActivePatches,
+            ...(tempActivePatches || [])
+        ];
+
+        const activePatchesSummary = allActivePatches.length > 0
+            ? allActivePatches.map(p => `- ${p.title}`).join('\n')
             : 'None';
 
         const patchPrompt: Message = {
@@ -214,7 +235,10 @@ export class HypoAssistantEngine {
 
         const userPatchMsg: Message = {
             role: 'user',
-            content: `Context:\n${contextBlocks}\n\nUser request: ${userQuery}`
+            content: dedent`Context:
+                ${contextBlocks}
+                
+                User request: ${userQuery}`
         };
 
         const patchRes = await this.llm.call(
@@ -238,13 +262,10 @@ export class HypoAssistantEngine {
 
     private createStoredPatches(rawPatches: any[], relevantIds: string[]): StoredPatch[] {
         const storedPatches: StoredPatch[] = [];
-
         for (const p of rawPatches) {
             if (!p.tool || !p.title) continue;
-
             let toolCall: ToolCall | null = null;
             let title = p.title.substring(0, 60);
-
             switch (p.tool) {
                 case 'setTextContent':
                     if (p.selector && p.text !== undefined) {
@@ -295,7 +316,6 @@ export class HypoAssistantEngine {
                     }
                     break;
             }
-
             if (toolCall) {
                 storedPatches.push({
                     id: crypto.randomUUID(),
@@ -309,7 +329,6 @@ export class HypoAssistantEngine {
                 });
             }
         }
-
         return storedPatches;
     }
 }

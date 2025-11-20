@@ -782,7 +782,7 @@ ${meta.content}`
       this.storage = storage;
       this.llm = llm;
     }
-    async run(userQuery, progress, signal) {
+    async run(userQuery, progress, signal, tempActivePatches) {
       const engineFlow = progress.startFlow({ steps: 3, stepTimeMs: 6e4 });
       engineFlow.startStep("Indexing sources");
       const { originals, index: semanticIndex } = await this.indexSources(engineFlow, signal);
@@ -792,7 +792,8 @@ ${meta.content}`
         userQuery,
         semanticIndex,
         engineFlow,
-        signal
+        signal,
+        tempActivePatches
       );
       console.log("\u{1F4C1} Relevant files:", relevantIds);
       engineFlow.startStep("Patch generation");
@@ -801,7 +802,8 @@ ${meta.content}`
         originals,
         relevantIds,
         engineFlow,
-        signal
+        signal,
+        tempActivePatches
       );
       if (storedPatches.length === 0) {
         throw new Error("No valid patches generated");
@@ -823,9 +825,13 @@ ${meta.content}`
     async indexSources(progress, signal) {
       return await new SemanticIndexer(this.config, this.storage, this.llm).ensureIndex(progress, signal);
     }
-    async findRelevantFiles(userQuery, semanticIndex, progress, signal) {
-      const activePatches = this.storage.getPatchGroups().flatMap((g) => g.patches).filter((p) => p.enabled);
-      const activePatchesSummary = activePatches.length > 0 ? activePatches.map((p) => `- ${p.title}`).join("\n") : "None";
+    async findRelevantFiles(userQuery, semanticIndex, progress, signal, tempActivePatches) {
+      const persistedActivePatches = this.storage.getPatchGroups().flatMap((g) => g.patches).filter((p) => p.enabled);
+      const allActivePatches = [
+        ...persistedActivePatches,
+        ...tempActivePatches || []
+      ];
+      const activePatchesSummary = allActivePatches.length > 0 ? allActivePatches.map((p) => `- ${p.title}`).join("\n") : "None";
       const relevancePrompt = {
         role: "system",
         content: dedent`
@@ -849,15 +855,19 @@ ${meta.content}`
       );
       return relevanceRes.relevant || ["HTML_DOC"];
     }
-    async generatePatches(userQuery, originals, relevantIds, progress, signal) {
+    async generatePatches(userQuery, originals, relevantIds, progress, signal, tempActivePatches) {
       const contextBlocks = relevantIds.map((id) => {
         const src = originals[id];
-        return src ? `[FILE: ${id}]
-${src.content}
-[/FILE]` : "";
+        return src ? dedent`[FILE: ${id}]
+                ${src.content}
+                [/FILE]` : "";
       }).filter(Boolean).join("\n\n");
-      const activePatches = this.storage.getPatchGroups().flatMap((g) => g.patches).filter((p) => p.enabled);
-      const activePatchesSummary = activePatches.length > 0 ? activePatches.map((p) => `- ${p.title}`).join("\n") : "None";
+      const persistedActivePatches = this.storage.getPatchGroups().flatMap((g) => g.patches).filter((p) => p.enabled);
+      const allActivePatches = [
+        ...persistedActivePatches,
+        ...tempActivePatches || []
+      ];
+      const activePatchesSummary = allActivePatches.length > 0 ? allActivePatches.map((p) => `- ${p.title}`).join("\n") : "None";
       const patchPrompt = {
         role: "system",
         content: dedent`
@@ -938,10 +948,10 @@ ${src.content}
       };
       const userPatchMsg = {
         role: "user",
-        content: `Context:
-${contextBlocks}
-
-User request: ${userQuery}`
+        content: dedent`Context:
+                ${contextBlocks}
+                
+                User request: ${userQuery}`
       };
       const patchRes = await this.llm.call(
         [patchPrompt, userPatchMsg],
@@ -2111,6 +2121,7 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
 
   // src/ui/UI.ts
   var HypoAssistantUI = class {
+    // ← добавлено
     constructor(onUserRequest, storage) {
       this.onUserRequest = onUserRequest;
       this.storage = storage;
@@ -2122,6 +2133,7 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
     progressView = null;
     activeConfigWidget = null;
     activePatchWidget = null;
+    tempActivePatches = [];
     show() {
       if (this.panel) return;
       this.injectStyles();
@@ -2250,7 +2262,12 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
           this.progressView.widget.scrollIntoView({ behavior: "smooth" });
         });
         try {
-          const result = await this.onUserRequest(query, progress, this.abortController.signal);
+          const result = await this.onUserRequest(
+            query,
+            progress,
+            this.abortController.signal,
+            this.tempActivePatches
+          );
           this.progressView?.freeze();
           setSendButtonState(false);
           this.chatPanel.addMessage(result.groupTitle, "assist");
@@ -2263,11 +2280,9 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
               patches: result.patches.map((p) => ({
                 ...p,
                 requestId
-                // ← используем переменную, а не newGroup.requestId
               }))
             };
-            const existingGroups = this.storage.getPatchGroups();
-            this.storage.savePatchGroups([...existingGroups, newGroup]);
+            this.tempActivePatches = [...this.tempActivePatches, ...newGroup.patches];
             PatchManager.applyToolCalls(newGroup.patches.map((p) => p.toolCall));
             this.chatPanel.addMessage('\u2705 Applied. Enable in "\u{1F9E9} Patches" to persist.', "assist");
           }

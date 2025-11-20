@@ -372,86 +372,86 @@
 </script>
 
 <!-- Генерация контента-триггера -->
-<script>
-    // === Идемпотентный LCG ===
-    const SEED = 123456; // ← МЕНЯЙТЕ ЭТОТ SEED ДЛЯ ГЕНЕРАЦИИ НОВОГО САЙТА
-    let lcgState = SEED;
-    function lcg() {
-        lcgState = (lcgState * 1664525 + 1013904223) % Math.pow(2, 32);
-        return lcgState / Math.pow(2, 32);
-    }
+<!--<script>-->
+<!--    // === Идемпотентный LCG ===-->
+<!--    const SEED = 123456; // ← МЕНЯЙТЕ ЭТОТ SEED ДЛЯ ГЕНЕРАЦИИ НОВОГО САЙТА-->
+<!--    let lcgState = SEED;-->
+<!--    function lcg() {-->
+<!--        lcgState = (lcgState * 1664525 + 1013904223) % Math.pow(2, 32);-->
+<!--        return lcgState / Math.pow(2, 32);-->
+<!--    }-->
 
-    function randomChoice(arr) {
-        return arr[Math.floor(lcg() * arr.length)];
-    }
+<!--    function randomChoice(arr) {-->
+<!--        return arr[Math.floor(lcg() * arr.length)];-->
+<!--    }-->
 
-    function randomString(len) {
-        let s = '';
-        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789 ';
-        for (let i = 0; i < len; i++) {
-            s += chars[Math.floor(lcg() * chars.length)];
-        }
-        return s.trim();
-    }
+<!--    function randomString(len) {-->
+<!--        let s = '';-->
+<!--        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789 ';-->
+<!--        for (let i = 0; i < len; i++) {-->
+<!--            s += chars[Math.floor(lcg() * chars.length)];-->
+<!--        }-->
+<!--        return s.trim();-->
+<!--    }-->
 
-    // === Генерация контента ===
-    const products = [];
-    for (let i = 0; i < 300; i++) { // ← было 60
-        products.push(`
-        <div class="overflow-item">
-            <strong>Product #${i}</strong>: ${randomString(50)} <!-- увеличено до 50 -->
-            <span class="tag">cat-${randomChoice(['tech','home','sport','fashion','beauty','auto','travel','books'])}</span>
-        </div>
-    `);
-    }
+<!--    // === Генерация контента ===-->
+<!--    const products = [];-->
+<!--    for (let i = 0; i < 300; i++) { // ← было 60-->
+<!--        products.push(`-->
+<!--        <div class="overflow-item">-->
+<!--            <strong>Product #${i}</strong>: ${randomString(50)} &lt;!&ndash; увеличено до 50 &ndash;&gt;-->
+<!--            <span class="tag">cat-${randomChoice(['tech','home','sport','fashion','beauty','auto','travel','books'])}</span>-->
+<!--        </div>-->
+<!--    `);-->
+<!--    }-->
 
-    const blogPosts = [];
-    for (let i = 0; i < 200; i++) { // ← было 40
-        let post = `<div class="overflow-item"><h4>Blog: "${randomString(30)}"</h4>`; // ← заголовок 30
-        for (let j = 0; j < 8; j++) { // ← было 5
-            post += `<p>${randomString(120)}</p>`; // ← текст 120
-        }
-        post += `<div class="tags">`;
-        for (let j = 0; j < 5; j++) { // ← было 3
-            post += `<span class="tag">tag-${randomChoice(['ai','design','code','ux','data','cloud','security'])}-${j}</span> `;
-        }
-        post += `</div></div>`;
-        blogPosts.push(post);
-    }
+<!--    const blogPosts = [];-->
+<!--    for (let i = 0; i < 200; i++) { // ← было 40-->
+<!--        let post = `<div class="overflow-item"><h4>Blog: "${randomString(30)}"</h4>`; // ← заголовок 30-->
+<!--        for (let j = 0; j < 8; j++) { // ← было 5-->
+<!--            post += `<p>${randomString(120)}</p>`; // ← текст 120-->
+<!--        }-->
+<!--        post += `<div class="tags">`;-->
+<!--        for (let j = 0; j < 5; j++) { // ← было 3-->
+<!--            post += `<span class="tag">tag-${randomChoice(['ai','design','code','ux','data','cloud','security'])}-${j}</span> `;-->
+<!--        }-->
+<!--        post += `</div></div>`;-->
+<!--        blogPosts.push(post);-->
+<!--    }-->
 
-    const navItems = [];
-    for (let i = 0; i < 100; i++) { // ← было 25
-        navItems.push(`<li><a href="/page-${i}.html">${randomString(20)}</a></li>`);
-    }
+<!--    const navItems = [];-->
+<!--    for (let i = 0; i < 100; i++) { // ← было 25-->
+<!--        navItems.push(`<li><a href="/page-${i}.html">${randomString(20)}</a></li>`);-->
+<!--    }-->
 
-    const legalLinks = [];
-    for (let i = 0; i < 50; i++) { // ← было 15
-        legalLinks.push(`<a href="/legal-${i}.html">Legal ${i}</a>`);
-    }
+<!--    const legalLinks = [];-->
+<!--    for (let i = 0; i < 50; i++) { // ← было 15-->
+<!--        legalLinks.push(`<a href="/legal-${i}.html">Legal ${i}</a>`);-->
+<!--    }-->
 
-    // === Сборка HTML ===
-    let html = `
-        <h3>Context Overflow Test Content (LCG Seed: ${SEED})</h3>
-        <div class="overflow-section">
-            <h3>Products (${products.length})</h3>
-            ${products.join('')}
-        </div>
-        <div class="overflow-section">
-            <h3>Blog Posts (${blogPosts.length})</h3>
-            ${blogPosts.join('')}
-        </div>
-        <div class="overflow-section">
-            <h3>Navigation</h3>
-            <ul>${navItems.join('')}</ul>
-        </div>
-        <div class="overflow-section">
-            <h3>Legal Footer</h3>
-            ${legalLinks.join(' | ')}
-        </div>
-        <p style="font-size:11px; color:#999;">This content is auto-generated to test context overflow handling in HypoAssistant.</p>
-    `;
+<!--    // === Сборка HTML ===-->
+<!--    let html = `-->
+<!--        <h3>Context Overflow Test Content (LCG Seed: ${SEED})</h3>-->
+<!--        <div class="overflow-section">-->
+<!--            <h3>Products (${products.length})</h3>-->
+<!--            ${products.join('')}-->
+<!--        </div>-->
+<!--        <div class="overflow-section">-->
+<!--            <h3>Blog Posts (${blogPosts.length})</h3>-->
+<!--            ${blogPosts.join('')}-->
+<!--        </div>-->
+<!--        <div class="overflow-section">-->
+<!--            <h3>Navigation</h3>-->
+<!--            <ul>${navItems.join('')}</ul>-->
+<!--        </div>-->
+<!--        <div class="overflow-section">-->
+<!--            <h3>Legal Footer</h3>-->
+<!--            ${legalLinks.join(' | ')}-->
+<!--        </div>-->
+<!--        <p style="font-size:11px; color:#999;">This content is auto-generated to test context overflow handling in HypoAssistant.</p>-->
+<!--    `;-->
 
-    document.getElementById('context-overflow-root').innerHTML = html;
-</script>
+<!--    document.getElementById('context-overflow-root').innerHTML = html;-->
+<!--</script>-->
 </body>
 </html>
