@@ -437,7 +437,9 @@ Now generate your final output.
   }
   async function collectOriginalSources() {
     const sources = {};
-    const htmlContent = document.documentElement.outerHTML;
+    const clone = document.documentElement.cloneNode(true);
+    clone.querySelectorAll("[data-hypo-ignore]").forEach((el) => el.remove());
+    const htmlContent = clone.outerHTML;
     const htmlHash = await sha256(htmlContent);
     sources["HTML_DOC"] = {
       type: "html",
@@ -446,19 +448,51 @@ Now generate your final output.
       signatureStart: "<!--==HTML_DOC==-->",
       signatureEnd: "<!--==/HTML_DOC==-->"
     };
-    document.querySelectorAll('script:not([src]):not([id="hypo-assistant-core"])').forEach((el, i) => {
+    const inlineScripts = document.querySelectorAll("script:not([src])");
+    let scriptIndex = 0;
+    for (const el of inlineScripts) {
+      if (el.closest("[data-hypo-ignore]")) continue;
       const content = el.textContent || "";
-      sha256(content).then((hash) => {
-        const id = `inline-script-${i}`;
-        sources[id] = {
-          type: "js",
-          content,
-          hash,
-          signatureStart: `/*==${id}==*/`,
-          signatureEnd: `/*==/${id}==*/`
-        };
-      });
-    });
+      const hash = await sha256(content);
+      const id = `inline-script-${scriptIndex++}`;
+      sources[id] = {
+        type: "js",
+        content,
+        hash,
+        signatureStart: `/*==${id}==*/`,
+        signatureEnd: `/*==/${id}==*/`
+      };
+    }
+    const inlineStyles = document.querySelectorAll("style");
+    let styleIndex = 0;
+    for (const el of inlineStyles) {
+      if (el.closest("[data-hypo-ignore]")) continue;
+      const content = el.textContent || "";
+      const hash = await sha256(content);
+      const id = `inline-style-${styleIndex++}`;
+      sources[id] = {
+        type: "css",
+        content,
+        hash,
+        signatureStart: `/*==${id}==*/`,
+        signatureEnd: `/*==/${id}==*/`
+      };
+    }
+    const templates = document.querySelectorAll("template");
+    let templateIndex = 0;
+    for (const el of templates) {
+      if (el.closest("[data-hypo-ignore]")) continue;
+      const content = el.innerHTML;
+      const hash = await sha256(content);
+      const id = `template-${templateIndex++}`;
+      sources[id] = {
+        type: "html",
+        content,
+        hash,
+        signatureStart: `<!--==${id}==-->`,
+        signatureEnd: `<!--==/${id}==-->`
+      };
+    }
     const scriptLinks = Array.from(document.querySelectorAll("script[src]"));
     for (let i = 0; i < scriptLinks.length; i++) {
       const script = scriptLinks[i];
@@ -478,32 +512,6 @@ Now generate your final output.
         console.warn("Failed to fetch JS:", script.src);
       }
     }
-    document.querySelectorAll("style").forEach((el, i) => {
-      const content = el.textContent || "";
-      sha256(content).then((hash) => {
-        const id = `inline-style-${i}`;
-        sources[id] = {
-          type: "css",
-          content,
-          hash,
-          signatureStart: `/*==${id}==*/`,
-          signatureEnd: `/*==/${id}==*/`
-        };
-      });
-    });
-    document.querySelectorAll("template").forEach((el, i) => {
-      const content = el.innerHTML;
-      sha256(content).then((hash) => {
-        const id = `template-${i}`;
-        sources[id] = {
-          type: "html",
-          content,
-          hash,
-          signatureStart: `<!--==${id}==-->`,
-          signatureEnd: `<!--==/${id}==-->`
-        };
-      });
-    });
     const links = Array.from(document.querySelectorAll('link[rel="stylesheet"][href]'));
     for (let i = 0; i < links.length; i++) {
       const link = links[i];
@@ -523,57 +531,7 @@ Now generate your final output.
         console.warn("Failed to fetch CSS:", link.href);
       }
     }
-    const syncSources = {};
-    syncSources["HTML_DOC"] = {
-      type: "html",
-      content: htmlContent,
-      hash: htmlHash,
-      signatureStart: "<!--==HTML_DOC==-->",
-      signatureEnd: "<!--==/HTML_DOC==-->"
-    };
-    const inlineScripts = document.querySelectorAll('script:not([src]):not([id="hypo-assistant-core"])');
-    for (let i = 0; i < inlineScripts.length; i++) {
-      const el = inlineScripts[i];
-      const content = el.textContent || "";
-      const hash = await sha256(content);
-      const id = `inline-script-${i}`;
-      syncSources[id] = {
-        type: "js",
-        content,
-        hash,
-        signatureStart: `/*==${id}==*/`,
-        signatureEnd: `/*==/${id}==*/`
-      };
-    }
-    const inlineStyles = document.querySelectorAll("style");
-    for (let i = 0; i < inlineStyles.length; i++) {
-      const el = inlineStyles[i];
-      const content = el.textContent || "";
-      const hash = await sha256(content);
-      const id = `inline-style-${i}`;
-      syncSources[id] = {
-        type: "css",
-        content,
-        hash,
-        signatureStart: `/*==${id}==*/`,
-        signatureEnd: `/*==/${id}==*/`
-      };
-    }
-    const templates = document.querySelectorAll("template");
-    for (let i = 0; i < templates.length; i++) {
-      const el = templates[i];
-      const content = el.innerHTML;
-      const hash = await sha256(content);
-      const id = `template-${i}`;
-      syncSources[id] = {
-        type: "html",
-        content,
-        hash,
-        signatureStart: `<!--==${id}==-->`,
-        signatureEnd: `<!--==/${id}==-->`
-      };
-    }
-    return syncSources;
+    return sources;
   }
 
   // src/utils/dedent.ts
@@ -2151,12 +2109,17 @@ ${clonedDoc.documentElement.outerHTML}`], { type: "text/html" });
       if (!document.getElementById("hypo-assistant-styles")) {
         const style = document.createElement("style");
         style.id = "hypo-assistant-styles";
+        style.setAttribute("data-hypo-ignore", "");
         style.textContent = styles_default;
         document.head.appendChild(style);
       }
     }
     injectMarkup() {
       const frag = document.createRange().createContextualFragment(ui_default);
+      const core = frag.firstElementChild;
+      if (core) {
+        core.setAttribute("data-hypo-ignore", "");
+      }
       document.body.appendChild(frag);
     }
     getUIElements() {

@@ -50,6 +50,7 @@ export class HypoAssistantUI {
         if (!document.getElementById('hypo-assistant-styles')) {
             const style = document.createElement('style');
             style.id = 'hypo-assistant-styles';
+            style.setAttribute('data-hypo-ignore', ''); // ← маркер
             style.textContent = STYLES_CSS;
             document.head.appendChild(style);
         }
@@ -57,6 +58,11 @@ export class HypoAssistantUI {
 
     private injectMarkup(): void {
         const frag = document.createRange().createContextualFragment(TEMPLATE_HTML);
+        // Маркируем корневой контейнер целиком
+        const core = frag.firstElementChild as HTMLElement | null;
+        if (core) {
+            core.setAttribute('data-hypo-ignore', '');
+        }
         document.body.appendChild(frag);
     }
 
